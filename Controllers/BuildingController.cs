@@ -18,14 +18,16 @@ namespace ai_indoor_nav_api.Controllers
         [HttpGet]
         public async Task<ActionResult<IEnumerable<Building>>> GetBuildings()
         {
-            return await context.Buildings.ToListAsync();
+            return await context.Buildings.Include(b => b.Floors).ToListAsync();
         }
 
         // GET: api/Building/5
         [HttpGet("{id}")]
         public async Task<ActionResult<Building>> GetBuilding(int id)
         {
-            var building = await context.Buildings.FindAsync(id);
+            var building = await context.Buildings
+                .Include(b => b.Floors)
+                .FirstOrDefaultAsync(b => b.Id == id);
 
             if (building == null)
             {
@@ -44,6 +46,9 @@ namespace ai_indoor_nav_api.Controllers
             {
                 return BadRequest();
             }
+
+            // Update the UpdatedAt timestamp
+            building.UpdatedAt = DateTime.UtcNow;
 
             context.Entry(building).State = EntityState.Modified;
 
@@ -71,6 +76,10 @@ namespace ai_indoor_nav_api.Controllers
         [HttpPost]
         public async Task<ActionResult<Building>> PostBuilding(Building building)
         {
+            // Set timestamps
+            building.CreatedAt = DateTime.UtcNow;
+            building.UpdatedAt = DateTime.UtcNow;
+
             context.Buildings.Add(building);
             await context.SaveChangesAsync();
 

@@ -1,13 +1,11 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.Extensions.Configuration;
-using System.Threading.Tasks;
 using System.Text;
 using Microsoft.IdentityModel.Tokens;
 using System.Security.Claims;
-using System;
 using System.IdentityModel.Tokens.Jwt;
 using ai_indoor_nav_api.Models;
+using Microsoft.AspNetCore.Authorization;
 
 namespace ai_indoor_nav_api.Controllers
 {
@@ -58,6 +56,13 @@ namespace ai_indoor_nav_api.Controllers
                 signingCredentials: creds);
 
             return new JwtSecurityTokenHandler().WriteToken(token);
+        }
+        
+        [HttpGet("validate")]
+        [Authorize]
+        public IActionResult ValidateToken()
+        {
+            return Ok();
         }
     }
 }

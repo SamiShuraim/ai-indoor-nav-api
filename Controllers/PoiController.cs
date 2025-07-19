@@ -13,14 +13,22 @@ namespace ai_indoor_nav_api.Controllers
         [HttpGet]
         public async Task<ActionResult<IEnumerable<Poi>>> GetPois()
         {
-            return await context.Pois.ToListAsync();
+            return await context.Pois
+                .Include(p => p.Floor)
+                .Include(p => p.Category)
+                .Include(p => p.PoiPoints)
+                .ToListAsync();
         }
 
         // GET: api/Poi/5
         [HttpGet("{id}")]
         public async Task<ActionResult<Poi>> GetPoi(int id)
         {
-            var poi = await context.Pois.FindAsync(id);
+            var poi = await context.Pois
+                .Include(p => p.Floor)
+                .Include(p => p.Category)
+                .Include(p => p.PoiPoints)
+                .FirstOrDefaultAsync(p => p.Id == id);
 
             if (poi == null)
             {
@@ -28,6 +36,18 @@ namespace ai_indoor_nav_api.Controllers
             }
 
             return poi;
+        }
+
+        // GET: api/Poi/floor/5
+        [HttpGet("floor/{floorId}")]
+        public async Task<ActionResult<IEnumerable<Poi>>> GetPoisByFloorId(int floorId)
+        {
+            return await context.Pois
+                .Where(p => p.FloorId == floorId)
+                .Include(p => p.Floor)
+                .Include(p => p.Category)
+                .Include(p => p.PoiPoints)
+                .ToListAsync();
         }
 
         // PUT: api/Poi/5
@@ -39,6 +59,9 @@ namespace ai_indoor_nav_api.Controllers
             {
                 return BadRequest();
             }
+
+            // Update the UpdatedAt timestamp
+            poi.UpdatedAt = DateTime.UtcNow;
 
             context.Entry(poi).State = EntityState.Modified;
 
@@ -66,6 +89,10 @@ namespace ai_indoor_nav_api.Controllers
         [HttpPost]
         public async Task<ActionResult<Poi>> PostPoi(Poi poi)
         {
+            // Set timestamps
+            poi.CreatedAt = DateTime.UtcNow;
+            poi.UpdatedAt = DateTime.UtcNow;
+
             context.Pois.Add(poi);
             await context.SaveChangesAsync();
 
