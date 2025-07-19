@@ -3,10 +3,15 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace ai_indoor_nav_api.Models
 {
-    public class Edge
+    // RouteEdge model that matches the SQL schema exactly
+    [Table("route_edges")]
+    public class RouteEdge
     {
         [Key]
         public int Id { get; set; }
+
+        [Required]
+        public int FloorId { get; set; }
 
         [Required]
         public int FromNodeId { get; set; }
@@ -14,10 +19,29 @@ namespace ai_indoor_nav_api.Models
         [Required]
         public int ToNodeId { get; set; }
 
+        [Column(TypeName = "decimal(8,4)")]
+        public decimal Weight { get; set; } = 1.0m;
+
+        [StringLength(50)]
+        public string EdgeType { get; set; } = "walkable"; // walkable, stairs, elevator, etc.
+
+        public bool IsBidirectional { get; set; } = true;
+
+        public bool IsVisible { get; set; } = true;
+
+        [Column("created_at")]
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+        [Column("updated_at")]
+        public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+
+        [ForeignKey("FloorId")]
+        public Floor? Floor { get; set; }
+
         [ForeignKey("FromNodeId")]
-        public Node? FromNode { get; set; }
+        public RouteNode? FromNode { get; set; }
 
         [ForeignKey("ToNodeId")]
-        public Node? ToNode { get; set; }
+        public RouteNode? ToNode { get; set; }
     }
 }
