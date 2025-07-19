@@ -1,6 +1,7 @@
 using System.Text;
 using ai_indoor_nav_api.Data;
 using dotenv.net;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -32,10 +33,14 @@ builder.Services.AddCors(options =>
 builder.Services.AddDbContext<MyDbContext>(options =>
     options.UseSqlServer(Environment.GetEnvironmentVariable("DEFAULT_CONNECTION")));
 
-builder.Services.AddAuthentication("Bearer")
-    .AddJwtBearer("Bearer", options =>
+builder.Services.AddAuthentication(options =>
     {
-        options.TokenValidationParameters = new()
+        options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+        options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+    })
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
             ValidateAudience = true,
@@ -43,16 +48,28 @@ builder.Services.AddAuthentication("Bearer")
             ValidateIssuerSigningKey = true,
             ValidIssuer = Environment.GetEnvironmentVariable("JWT_ISSUER"),
             ValidAudience = Environment.GetEnvironmentVariable("JWT_AUDIENCE"),
-            IssuerSigningKey = new SymmetricSecurityKey(
-                Encoding.UTF8.GetBytes(Environment.GetEnvironmentVariable("JWT_KEY")))
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(Environment.GetEnvironmentVariable("JWT_KEY")))
+        };
+    
+        // This is crucial - don't redirect on API endpoints
+        options.Events = new JwtBearerEvents
+        {
+            OnChallenge = context =>
+            {
+                context.HandleResponse();
+                context.Response.StatusCode = 401;
+                context.Response.ContentType = "application/json";
+                return context.Response.WriteAsync("{\"error\":\"Unauthorized\"}");
+            }
         };
     });
 
 builder.Services.AddAuthorization();
 
-builder.Services.AddIdentity<IdentityUser, IdentityRole>()
-    .AddEntityFrameworkStores<MyDbContext>()
-    .AddDefaultTokenProviders();
+builder.Services.AddIdentityCore<IdentityUser>()
+    .AddRoles<IdentityRole>()
+    .AddEntityFrameworkStores<MyDbContext>();
+
 
 var app = builder.Build();
 
