@@ -4,3 +4,6 @@ obj/
 riderModule.iml
 /_ReSharper.Caches/
 .env
+.idea/.idea.ai-indoor-nav-api/.idea/
+ai-indoor-nav-api.http
+Migrations/

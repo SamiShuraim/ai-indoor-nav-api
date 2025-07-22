@@ -1,5 +1,6 @@
 ﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json.Serialization;
 
 namespace ai_indoor_nav_api.Models
 {
@@ -20,6 +21,7 @@ namespace ai_indoor_nav_api.Models
         [Column("updated_at")]
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
+        [JsonIgnore]
         public ICollection<Floor> Floors { get; set; } = new List<Floor>();
     }
 }
