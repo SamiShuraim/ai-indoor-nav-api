@@ -14,7 +14,6 @@ namespace ai_indoor_nav_api.Controllers
         public async Task<ActionResult<IEnumerable<Poi>>> GetPois()
         {
             return await context.Pois
-                .Include(p => p.Floor)
                 .Include(p => p.Category)
                 .Include(p => p.PoiPoints)
                 .ToListAsync();
@@ -25,7 +24,6 @@ namespace ai_indoor_nav_api.Controllers
         public async Task<ActionResult<Poi>> GetPoi(int id)
         {
             var poi = await context.Pois
-                .Include(p => p.Floor)
                 .Include(p => p.Category)
                 .Include(p => p.PoiPoints)
                 .FirstOrDefaultAsync(p => p.Id == id);
@@ -44,7 +42,6 @@ namespace ai_indoor_nav_api.Controllers
         {
             return await context.Pois
                 .Where(p => p.FloorId == floorId)
-                .Include(p => p.Floor)
                 .Include(p => p.Category)
                 .Include(p => p.PoiPoints)
                 .ToListAsync();

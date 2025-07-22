@@ -1,5 +1,6 @@
 ﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 
 namespace ai_indoor_nav_api.Models
@@ -29,9 +30,16 @@ namespace ai_indoor_nav_api.Models
         [ForeignKey("BuildingId")]
         public Building? Building { get; set; }
 
+        [JsonIgnore]
         public ICollection<RouteNode> RouteNodes { get; set; } = new List<RouteNode>();
+        
+        [JsonIgnore]
         public ICollection<Poi> Pois { get; set; } = new List<Poi>();
+        
+        [JsonIgnore]
         public ICollection<Beacon> Beacons { get; set; } = new List<Beacon>();
+        
+        [JsonIgnore]
         public ICollection<Wall> Walls { get; set; } = new List<Wall>();
     }
 }

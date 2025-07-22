@@ -1,5 +1,6 @@
 ﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json.Serialization;
 
 namespace ai_indoor_nav_api.Models
 {
@@ -21,6 +22,7 @@ namespace ai_indoor_nav_api.Models
 
         public string? Description { get; set; }
 
+        [JsonIgnore]
         public ICollection<Poi> Pois { get; set; } = new List<Poi>();
     }
 
@@ -55,6 +57,7 @@ namespace ai_indoor_nav_api.Models
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
         [ForeignKey("FloorId")]
+        [JsonIgnore]
         public Floor? Floor { get; set; }
 
         [ForeignKey("CategoryId")]
@@ -84,6 +87,7 @@ namespace ai_indoor_nav_api.Models
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
         [ForeignKey("PoiId")]
+        [JsonIgnore]
         public Poi? Poi { get; set; }
     }
 }

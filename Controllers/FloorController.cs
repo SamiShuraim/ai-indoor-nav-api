@@ -26,10 +26,6 @@ namespace ai_indoor_nav_api.Controllers
         {
             var floor = await context.Floors
                 .Include(f => f.Building)
-                .Include(f => f.RouteNodes)
-                .Include(f => f.Pois)
-                .Include(f => f.Beacons)
-                .Include(f => f.Walls)
                 .FirstOrDefaultAsync(f => f.Id == id);
 
             if (floor == null)

@@ -18,16 +18,14 @@ namespace ai_indoor_nav_api.Controllers
         [HttpGet]
         public async Task<ActionResult<IEnumerable<Building>>> GetBuildings()
         {
-            return await context.Buildings.Include(b => b.Floors).ToListAsync();
+            return await context.Buildings.ToListAsync();
         }
 
         // GET: api/Building/5
         [HttpGet("{id}")]
         public async Task<ActionResult<Building>> GetBuilding(int id)
         {
-            var building = await context.Buildings
-                .Include(b => b.Floors)
-                .FirstOrDefaultAsync(b => b.Id == id);
+            var building = await context.Buildings.FindAsync(id);
 
             if (building == null)
             {
