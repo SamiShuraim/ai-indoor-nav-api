@@ -12,7 +12,7 @@ using ai_indoor_nav_api.Data;
 namespace ai_indoor_nav_api.Migrations
 {
     [DbContext(typeof(MyDbContext))]
-    [Migration("20250724130155_InitialCreate")]
+    [Migration("20250724132131_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />
@@ -602,7 +602,7 @@ namespace ai_indoor_nav_api.Migrations
 
                     b.ToTable("route_edges", t =>
                         {
-                            t.HasCheckConstraint("no_self_reference", "\"FromNodeId\" != \"ToNodeId\"");
+                            t.HasCheckConstraint("no_self_reference", "\"from_node_id\" != \"to_node_id\"");
                         });
                 });
 

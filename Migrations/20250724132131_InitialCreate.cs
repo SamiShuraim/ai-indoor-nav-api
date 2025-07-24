@@ -392,7 +392,7 @@ namespace ai_indoor_nav_api.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_route_edges", x => x.id);
-                    table.CheckConstraint("no_self_reference", "\"FromNodeId\" != \"ToNodeId\"");
+                    table.CheckConstraint("no_self_reference", "\"from_node_id\" != \"to_node_id\"");
                     table.ForeignKey(
                         name: "FK_route_edges_floors_floor_id",
                         column: x => x.floor_id,
