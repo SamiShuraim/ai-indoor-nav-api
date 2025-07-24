@@ -81,6 +81,12 @@ builder.Services.AddIdentityCore<IdentityUser>()
 
 var app = builder.Build();
 
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<MyDbContext>();
+    db.Database.Migrate();
+}
+
 // Add this line before app.UseHttpsRedirection();
 app.UseCors();
 
