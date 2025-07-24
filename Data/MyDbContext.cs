@@ -41,7 +41,7 @@ namespace ai_indoor_nav_api.Data
                 .HasDatabaseName("idx_floor_to_node");
 
             builder.Entity<RouteEdge>()
-                .HasCheckConstraint("no_self_reference", "\"FromNodeId\" != \"ToNodeId\"");
+               .HasCheckConstraint("no_self_reference", "\"from_node_id\" != \"to_node_id\"");
 
             // RouteNode indices
             builder.Entity<RouteNode>()
