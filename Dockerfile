@@ -19,4 +19,4 @@ COPY --from=build /app/out .
 EXPOSE 80
 
 # Run the app
-ENTRYPOINT ["dotnet", "ai_indoor_nav_api.dll"]
+ENTRYPOINT ["dotnet", "ai-indoor-nav-api.dll"]
