@@ -39,7 +39,7 @@ builder.Services.AddCors(options =>
 });
 
 builder.Services.AddDbContext<MyDbContext>(options =>
-    options.UseSqlServer(Environment.GetEnvironmentVariable("DEFAULT_CONNECTION")));
+    options.UseNpgsql(Environment.GetEnvironmentVariable("DEFAULT_CONNECTION")));
 
 builder.Services.AddAuthentication(options =>
     {
