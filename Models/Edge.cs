@@ -4,30 +4,38 @@ using System.Text.Json.Serialization;
 
 namespace ai_indoor_nav_api.Models
 {
-    // RouteEdge model that matches the SQL schema exactly
     [Table("route_edges")]
     public class RouteEdge
     {
         [Key]
+        [Column("id")]
         public int Id { get; set; }
 
         [Required]
+        [Column("floor_id")]
         public int FloorId { get; set; }
 
         [Required]
+        [Column("from_node_id")]
         public int FromNodeId { get; set; }
 
         [Required]
+        [Column("to_node_id")]
         public int ToNodeId { get; set; }
 
-        [Column(TypeName = "decimal(8,4)")]
+        [Required]
+        [Column("weight", TypeName = "numeric(8,4)")]
         public decimal Weight { get; set; } = 1.0m;
 
+        [Required]
+        [Column("edge_type")]
         [StringLength(50)]
-        public string EdgeType { get; set; } = "walkable"; // walkable, stairs, elevator, etc.
+        public string EdgeType { get; set; } = "walkable";
 
+        [Column("is_bidirectional")]
         public bool IsBidirectional { get; set; } = true;
 
+        [Column("is_visible")]
         public bool IsVisible { get; set; } = true;
 
         [Column("created_at")]

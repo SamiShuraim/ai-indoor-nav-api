@@ -4,6 +4,7 @@ using System.Text.Json.Serialization;
 
 namespace ai_indoor_nav_api.Models
 {
+    [Table("walls")]
     public class Wall
     {
         [Key]
@@ -60,4 +61,4 @@ namespace ai_indoor_nav_api.Models
         [JsonIgnore]
         public Wall? Wall { get; set; }
     }
-} 
+}

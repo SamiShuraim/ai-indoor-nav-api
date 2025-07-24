@@ -4,7 +4,6 @@ using System.Text.Json.Serialization;
 
 namespace ai_indoor_nav_api.Models
 {
-    // RouteNode model that matches the SQL schema exactly
     [Table("route_nodes")]
     public class RouteNode
     {
@@ -20,6 +19,7 @@ namespace ai_indoor_nav_api.Models
         [Column(TypeName = "decimal(12,9)")]
         public decimal Y { get; set; }
 
+        [Required]
         [StringLength(50)]
         public string NodeType { get; set; } = "waypoint"; // waypoint, entrance, exit, junction
 

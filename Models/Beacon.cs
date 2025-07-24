@@ -8,64 +8,83 @@ namespace ai_indoor_nav_api.Models
     public class BeaconType
     {
         [Key]
+        [Column("id")]
         public int Id { get; set; }
 
         [Required]
         [StringLength(100)]
+        [Column("name")]
         public string Name { get; set; } = "";
 
+        [Column("description")]
         public string? Description { get; set; }
 
-        public int? TransmissionPower { get; set; } // Signal strength
+        [Column("transmission_power")]
+        public int? TransmissionPower { get; set; }
 
-        public int? BatteryLife { get; set; } // Expected battery life in days
+        [Column("battery_life")]
+        public int? BatteryLife { get; set; }
 
-        [Column(TypeName = "decimal(6,2)")]
-        public decimal? RangeMeters { get; set; } // Effective range in meters
+        [Column("range_meters", TypeName = "numeric(6,2)")]
+        public decimal? RangeMeters { get; set; }
 
         [JsonIgnore]
         public ICollection<Beacon> Beacons { get; set; } = new List<Beacon>();
     }
 
+    [Table("beacons")]
     public class Beacon
     {
         [Key]
+        [Column("id")]
         public int Id { get; set; }
 
         [Required]
+        [Column("floor_id")]
         public int FloorId { get; set; }
 
+        [Column("beacon_type_id")]
         public int? BeaconTypeId { get; set; }
 
         [Required]
         [StringLength(255)]
+        [Column("name")]
         public string Name { get; set; } = "";
 
         [StringLength(36)]
-        public string? Uuid { get; set; } // Beacon UUID for physical identification
+        [Column("uuid")]
+        public string? Uuid { get; set; }
 
-        public int? MajorId { get; set; } // iBeacon major ID
+        [Column("major_id")]
+        public int? MajorId { get; set; }
 
-        public int? MinorId { get; set; } // iBeacon minor ID
+        [Column("minor_id")]
+        public int? MinorId { get; set; }
 
-        [Column(TypeName = "decimal(12,9)")]
+        [Column("x", TypeName = "numeric(12,9)")]
         public decimal X { get; set; }
 
-        [Column(TypeName = "decimal(12,9)")]
+        [Column("y", TypeName = "numeric(12,9)")]
         public decimal Y { get; set; }
 
-        [Column(TypeName = "decimal(8,4)")]
-        public decimal Z { get; set; } = 0; // Height/elevation
+        [Column("z", TypeName = "numeric(8,4)")]
+        public decimal Z { get; set; } = 0;
 
+        [Column("is_active")]
         public bool IsActive { get; set; } = true;
 
+        [Column("is_visible")]
         public bool IsVisible { get; set; } = true;
 
-        public int BatteryLevel { get; set; } = 100; // Percentage
+        [Column("battery_level")]
+        public int BatteryLevel { get; set; } = 100;
 
+        [Column("last_seen")]
         public DateTime? LastSeen { get; set; }
 
-        public DateOnly? InstallationDate { get; set; }
+        // PostgreSQL doesn't support DateOnly directly, so use DateTime and truncate if needed
+        [Column("installation_date")]
+        public DateTime? InstallationDate { get; set; }
 
         [Column("created_at")]
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
@@ -80,4 +99,4 @@ namespace ai_indoor_nav_api.Models
         [ForeignKey("BeaconTypeId")]
         public BeaconType? BeaconType { get; set; }
     }
-} 
+}

@@ -26,6 +26,7 @@ namespace ai_indoor_nav_api.Models
         public ICollection<Poi> Pois { get; set; } = new List<Poi>();
     }
 
+    [Table("poi")]
     public class Poi
     {
         [Key]

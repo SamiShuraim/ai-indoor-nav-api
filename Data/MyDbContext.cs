@@ -4,8 +4,13 @@ using ai_indoor_nav_api.Models;
 
 namespace ai_indoor_nav_api.Data
 {
-    public class MyDbContext(DbContextOptions<MyDbContext> options) : IdentityDbContext(options)
+    public class MyDbContext : IdentityDbContext
     {
+        public MyDbContext(DbContextOptions<MyDbContext> options)
+            : base(options)
+        {
+        }
+
         protected override void OnModelCreating(ModelBuilder builder)
         {
             base.OnModelCreating(builder);
@@ -23,7 +28,6 @@ namespace ai_indoor_nav_api.Data
                 .HasForeignKey(e => e.ToNodeId)
                 .OnDelete(DeleteBehavior.Restrict);
 
-            // RouteEdge constraints and indices
             builder.Entity<RouteEdge>()
                 .HasIndex(e => new { e.FromNodeId, e.ToNodeId })
                 .IsUnique();
@@ -37,7 +41,7 @@ namespace ai_indoor_nav_api.Data
                 .HasDatabaseName("idx_floor_to_node");
 
             builder.Entity<RouteEdge>()
-                .HasCheckConstraint("no_self_reference", "[FromNodeId] != [ToNodeId]");
+                .HasCheckConstraint("no_self_reference", "\"FromNodeId\" != \"ToNodeId\"");
 
             // RouteNode indices
             builder.Entity<RouteNode>()
@@ -93,26 +97,26 @@ namespace ai_indoor_nav_api.Data
                 .HasIndex(f => new { f.BuildingId, f.FloorNumber })
                 .IsUnique();
         }
-        
-        // Core entities
-        public DbSet<Building> Buildings { get; set; } = null!;
-        public DbSet<Floor> Floors { get; set; } = null!;
-        public DbSet<Poi> Pois { get; set; } = null!;
 
-        // New navigation entities
-        public DbSet<RouteNode> RouteNodes { get; set; } = null!;
-        public DbSet<RouteEdge> RouteEdges { get; set; } = null!;
-        
+        // Core entities
+        public DbSet<Building> Buildings { get; set; }
+        public DbSet<Floor> Floors { get; set; }
+        public DbSet<Poi> Pois { get; set; }
+
+        // Navigation entities
+        public DbSet<RouteNode> RouteNodes { get; set; }
+        public DbSet<RouteEdge> RouteEdges { get; set; }
+
         // POI entities
-        public DbSet<PoiCategory> PoiCategories { get; set; } = null!;
-        public DbSet<PoiPoint> PoiPoints { get; set; } = null!;
-        
+        public DbSet<PoiCategory> PoiCategories { get; set; }
+        public DbSet<PoiPoint> PoiPoints { get; set; }
+
         // Beacon entities
-        public DbSet<BeaconType> BeaconTypes { get; set; } = null!;
-        public DbSet<Beacon> Beacons { get; set; } = null!;
-        
+        public DbSet<BeaconType> BeaconTypes { get; set; }
+        public DbSet<Beacon> Beacons { get; set; }
+
         // Wall entities
-        public DbSet<Wall> Walls { get; set; } = null!;
-        public DbSet<WallPoint> WallPoints { get; set; } = null!;
+        public DbSet<Wall> Walls { get; set; }
+        public DbSet<WallPoint> WallPoints { get; set; }
     }
 }
