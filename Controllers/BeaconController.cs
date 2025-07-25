@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ai_indoor_nav_api.Data;
@@ -75,36 +76,100 @@ namespace ai_indoor_nav_api.Controllers
                 .ToListAsync();
         }
 
-        // PUT: api/Beacon/5
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutBeacon(int id, Beacon beacon)
+        public async Task<IActionResult> PutBeacon(int id, JsonElement jsonBeacon)
         {
-            if (id != beacon.Id)
-            {
-                return BadRequest();
-            }
+            var existingBeacon = await context.Beacons.FindAsync(id);
+            if (existingBeacon == null)
+                return NotFound();
 
-            // Update the UpdatedAt timestamp
-            beacon.UpdatedAt = DateTime.UtcNow;
-
-            context.Entry(beacon).State = EntityState.Modified;
-
-            try
+            foreach (var prop in jsonBeacon.EnumerateObject())
             {
-                await context.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!BeaconExists(id))
+                switch (prop.Name.ToLower())
                 {
-                    return NotFound();
-                }
-                else
-                {
-                    throw;
+                    case "floorid":
+                        if (prop.Value.TryGetInt32(out var floorId))
+                            existingBeacon.FloorId = floorId;
+                        break;
+
+                    case "beacontypeid":
+                        if (prop.Value.ValueKind != JsonValueKind.Null && prop.Value.TryGetInt32(out var beaconTypeId))
+                            existingBeacon.BeaconTypeId = beaconTypeId;
+                        else
+                            existingBeacon.BeaconTypeId = null;
+                        break;
+
+                    case "name":
+                        existingBeacon.Name = prop.Value.GetString() ?? "";
+                        break;
+
+                    case "uuid":
+                        existingBeacon.Uuid = prop.Value.ValueKind == JsonValueKind.Null ? null : prop.Value.GetString();
+                        break;
+
+                    case "majorid":
+                        if (prop.Value.ValueKind != JsonValueKind.Null && prop.Value.TryGetInt32(out var majorId))
+                            existingBeacon.MajorId = majorId;
+                        else
+                            existingBeacon.MajorId = null;
+                        break;
+
+                    case "minorid":
+                        if (prop.Value.ValueKind != JsonValueKind.Null && prop.Value.TryGetInt32(out var minorId))
+                            existingBeacon.MinorId = minorId;
+                        else
+                            existingBeacon.MinorId = null;
+                        break;
+
+                    case "x":
+                        if (prop.Value.TryGetDecimal(out var x))
+                            existingBeacon.X = x;
+                        break;
+
+                    case "y":
+                        if (prop.Value.TryGetDecimal(out var y))
+                            existingBeacon.Y = y;
+                        break;
+
+                    case "z":
+                        if (prop.Value.TryGetDecimal(out var z))
+                            existingBeacon.Z = z;
+                        break;
+
+                    case "isactive":
+                        if (prop.Value.ValueKind == JsonValueKind.True || prop.Value.ValueKind == JsonValueKind.False)
+                            existingBeacon.IsActive = prop.Value.GetBoolean();
+                        break;
+
+                    case "isvisible":
+                        if (prop.Value.ValueKind == JsonValueKind.True || prop.Value.ValueKind == JsonValueKind.False)
+                            existingBeacon.IsVisible = prop.Value.GetBoolean();
+                        break;
+
+                    case "batterylevel":
+                        if (prop.Value.TryGetInt32(out var batteryLevel))
+                            existingBeacon.BatteryLevel = batteryLevel;
+                        break;
+
+                    case "lastseen":
+                        if (prop.Value.ValueKind != JsonValueKind.Null && prop.Value.TryGetDateTime(out var lastSeen))
+                            existingBeacon.LastSeen = lastSeen;
+                        else
+                            existingBeacon.LastSeen = null;
+                        break;
+
+                    case "installationdate":
+                        if (prop.Value.ValueKind != JsonValueKind.Null && prop.Value.TryGetDateTime(out var installDate))
+                            existingBeacon.InstallationDate = installDate;
+                        else
+                            existingBeacon.InstallationDate = null;
+                        break;
                 }
             }
 
+            existingBeacon.UpdatedAt = DateTime.UtcNow;
+
+            await context.SaveChangesAsync();
             return NoContent();
         }
 
