@@ -10,6 +10,12 @@ namespace ai_indoor_nav_api.Data
             : base(options)
         {
         }
+        
+        protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+        {
+            optionsBuilder.UseNpgsql("your_connection_string", 
+                o => o.UseNetTopologySuite());
+        }
 
         protected override void OnModelCreating(ModelBuilder builder)
         {
@@ -57,15 +63,6 @@ namespace ai_indoor_nav_api.Data
                 .HasIndex(p => new { p.FloorId, p.CategoryId })
                 .HasDatabaseName("idx_floor_category");
 
-            // PoiPoint unique constraint
-            builder.Entity<PoiPoint>()
-                .HasIndex(pp => new { pp.PoiId, pp.PointOrder })
-                .IsUnique();
-
-            builder.Entity<PoiPoint>()
-                .HasIndex(pp => new { pp.PoiId, pp.PointOrder })
-                .HasDatabaseName("idx_poi_order");
-
             // Beacon configuration
             builder.Entity<BeaconType>()
                 .HasIndex(bt => bt.Name)
@@ -82,15 +79,6 @@ namespace ai_indoor_nav_api.Data
             builder.Entity<Beacon>()
                 .HasIndex(b => new { b.Uuid, b.MajorId, b.MinorId })
                 .HasDatabaseName("idx_beacon_identifiers");
-
-            // Wall configuration
-            builder.Entity<WallPoint>()
-                .HasIndex(wp => new { wp.WallId, wp.PointOrder })
-                .IsUnique();
-
-            builder.Entity<WallPoint>()
-                .HasIndex(wp => new { wp.WallId, wp.PointOrder })
-                .HasDatabaseName("idx_wall_order");
 
             // Floor unique constraint
             builder.Entity<Floor>()
@@ -109,14 +97,10 @@ namespace ai_indoor_nav_api.Data
 
         // POI entities
         public DbSet<PoiCategory> PoiCategories { get; set; }
-        public DbSet<PoiPoint> PoiPoints { get; set; }
 
         // Beacon entities
         public DbSet<BeaconType> BeaconTypes { get; set; }
         public DbSet<Beacon> Beacons { get; set; }
 
-        // Wall entities
-        public DbSet<Wall> Walls { get; set; }
-        public DbSet<WallPoint> WallPoints { get; set; }
     }
 }

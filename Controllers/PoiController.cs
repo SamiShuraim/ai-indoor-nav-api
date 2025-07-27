@@ -1,8 +1,15 @@
-using System.Text.Json;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ai_indoor_nav_api.Data;
 using ai_indoor_nav_api.Models;
+using NetTopologySuite.Geometries;
+using NetTopologySuite.IO;
+using Newtonsoft.Json;
 
 namespace ai_indoor_nav_api.Controllers
 {
@@ -10,112 +17,136 @@ namespace ai_indoor_nav_api.Controllers
     [ApiController]
     public class PoiController(MyDbContext context) : ControllerBase
     {
-        // GET: api/Poi
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Poi>>> GetPois()
+        public async Task<ActionResult<IEnumerable<object>>> GetPois()
         {
-            return await context.Pois
-                .Include(p => p.Category)
-                .Include(p => p.PoiPoints)
-                .ToListAsync();
+            var pois = await context.Pois.ToListAsync();
+            var writer = new GeoJsonWriter();
+
+            var features = pois.Select(poi => new
+            {
+                type = "Feature",
+                geometry = JsonConvert.DeserializeObject(writer.Write(poi.Geometry)),
+                properties = new
+                {
+                    poi.Id,
+                    poi.Name,
+                    poi.FloorId,
+                    poi.CategoryId,
+                    poi.Description,
+                    poi.PoiType,
+                    poi.Color,
+                    poi.IsVisible,
+                    poi.CreatedAt,
+                    poi.UpdatedAt
+                }
+            });
+
+            return Ok(features);
         }
+
 
         // GET: api/Poi/5
         [HttpGet("{id}")]
-        public async Task<ActionResult<Poi>> GetPoi(int id)
+        public async Task<IActionResult> GetPoi(int id)
         {
-            var poi = await context.Pois
-                .Include(p => p.Category)
-                .Include(p => p.PoiPoints)
-                .FirstOrDefaultAsync(p => p.Id == id);
+            var poi = await context.Pois.FindAsync(id);
+            if (poi == null) return NotFound();
 
-            if (poi == null)
+            var writer = new GeoJsonWriter();
+            var geometryJson = writer.Write(poi.Geometry);
+
+            var feature = new
             {
-                return NotFound();
-            }
+                type = "Feature",
+                geometry = JsonConvert.DeserializeObject(geometryJson),
+                properties = new
+                {
+                    poi.Name,
+                    poi.FloorId,
+                    poi.CategoryId,
+                    poi.Description,
+                    poi.PoiType,
+                    poi.Color,
+                    poi.IsVisible
+                }
+            };
 
-            return poi;
-        }
-
-        // GET: api/Poi/floor/5
-        [HttpGet("floor/{floorId}")]
-        public async Task<ActionResult<IEnumerable<Poi>>> GetPoisByFloorId(int floorId)
-        {
-            return await context.Pois
-                .Where(p => p.FloorId == floorId)
-                .Include(p => p.Category)
-                .Include(p => p.PoiPoints)
-                .ToListAsync();
+            return Ok(feature);
         }
 
         // PUT: api/Poi/5
         // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutPoi(int id, JsonElement jsonPoi)
+        public async Task<IActionResult> PutPoi(int id, Poi poi)
         {
-            var existingPoi = await context.Pois.FindAsync(id);
-            if (existingPoi == null)
-                return NotFound();
-
-            foreach (var prop in jsonPoi.EnumerateObject())
+            if (id != poi.Id)
             {
-                switch (prop.Name.ToLower())
+                return BadRequest();
+            }
+
+            context.Entry(poi).State = EntityState.Modified;
+
+            try
+            {
+                await context.SaveChangesAsync();
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                if (!PoiExists(id))
                 {
-                    case "floorid":
-                        if (prop.Value.TryGetInt32(out var floorId))
-                            existingPoi.FloorId = floorId;
-                        break;
-
-                    case "categoryid":
-                        if (prop.Value.ValueKind != JsonValueKind.Null && prop.Value.TryGetInt32(out var categoryId))
-                            existingPoi.CategoryId = categoryId;
-                        else
-                            existingPoi.CategoryId = null;
-                        break;
-
-                    case "name":
-                        existingPoi.Name = prop.Value.GetString() ?? "";
-                        break;
-
-                    case "description":
-                        existingPoi.Description = prop.Value.ValueKind == JsonValueKind.Null ? null : prop.Value.GetString();
-                        break;
-
-                    case "poitype":
-                        existingPoi.PoiType = prop.Value.GetString() ?? "room";
-                        break;
-
-                    case "color":
-                        existingPoi.Color = prop.Value.GetString() ?? "#3B82F6";
-                        break;
-
-                    case "isvisible":
-                        if (prop.Value.ValueKind == JsonValueKind.True || prop.Value.ValueKind == JsonValueKind.False)
-                            existingPoi.IsVisible = prop.Value.GetBoolean();
-                        break;
+                    return NotFound();
+                }
+                else
+                {
+                    throw;
                 }
             }
 
-            existingPoi.UpdatedAt = DateTime.UtcNow;
-
-            await context.SaveChangesAsync();
             return NoContent();
         }
 
-
         // POST: api/Poi
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPost]
-        public async Task<ActionResult<Poi>> PostPoi(Poi poi)
+        public async Task<IActionResult> CreatePoi([FromBody] GeoJsonFeatureDto input)
         {
-            // Set timestamps
-            poi.CreatedAt = DateTime.UtcNow;
-            poi.UpdatedAt = DateTime.UtcNow;
+            var reader = new GeoJsonReader();
+
+            // Reconstruct full GeoJSON string
+            var geoJson = JsonConvert.SerializeObject(new
+            {
+                type = "Feature",
+                geometry = input.Geometry
+            });
+
+            Geometry geometry;
+            try
+            {
+                geometry = reader.Read<Geometry>(geoJson);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest($"Invalid geometry: {ex.Message}");
+            }
+
+            var poi = new Poi
+            {
+                Name = input.Properties.Name,
+                FloorId = input.Properties.FloorId,
+                CategoryId = input.Properties.CategoryId,
+                Description = input.Properties.Description,
+                PoiType = input.Properties.PoiType,
+                Color = input.Properties.Color,
+                IsVisible = input.Properties.IsVisible,
+                Geometry = geometry,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
 
             context.Pois.Add(poi);
             await context.SaveChangesAsync();
 
-            return CreatedAtAction("GetPoi", new { id = poi.Id }, poi);
+            return CreatedAtAction(nameof(GetPoi), new { id = poi.Id }, poi);
         }
 
         // DELETE: api/Poi/5

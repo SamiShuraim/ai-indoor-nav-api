@@ -1,6 +1,7 @@
 ﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json.Serialization;
+using NetTopologySuite.Geometries;
 
 namespace ai_indoor_nav_api.Models
 {
@@ -25,7 +26,7 @@ namespace ai_indoor_nav_api.Models
         [JsonIgnore]
         public ICollection<Poi> Pois { get; set; } = new List<Poi>();
     }
-
+    
     [Table("poi")]
     public class Poi
     {
@@ -57,38 +58,14 @@ namespace ai_indoor_nav_api.Models
         [Column("updated_at")]
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
+        // Geometry field: Point, Polygon, etc.
+        public Geometry? Geometry { get; set; }
+
         [ForeignKey("FloorId")]
         [JsonIgnore]
         public Floor? Floor { get; set; }
 
         [ForeignKey("CategoryId")]
         public PoiCategory? Category { get; set; }
-
-        public ICollection<PoiPoint> PoiPoints { get; set; } = new List<PoiPoint>();
-    }
-
-    [Table("poi_points")]
-    public class PoiPoint
-    {
-        [Key]
-        public int Id { get; set; }
-
-        [Required]
-        public int PoiId { get; set; }
-
-        [Column(TypeName = "decimal(12,9)")]
-        public decimal X { get; set; }
-
-        [Column(TypeName = "decimal(12,9)")]
-        public decimal Y { get; set; }
-
-        public int PointOrder { get; set; } // Order of points in polygon
-
-        [Column("created_at")]
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-
-        [ForeignKey("PoiId")]
-        [JsonIgnore]
-        public Poi? Poi { get; set; }
     }
 }

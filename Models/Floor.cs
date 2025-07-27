@@ -44,8 +44,5 @@ namespace ai_indoor_nav_api.Models
 
         [JsonIgnore]
         public ICollection<Beacon> Beacons { get; set; } = new List<Beacon>();
-
-        [JsonIgnore]
-        public ICollection<Wall> Walls { get; set; } = new List<Wall>();
     }
 }

@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using NetTopologySuite.Geometries;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using ai_indoor_nav_api.Data;
 
@@ -20,6 +21,7 @@ namespace ai_indoor_nav_api.Migrations
                 .HasAnnotation("ProductVersion", "8.0.0")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
+            NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "postgis");
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRole", b =>
@@ -444,6 +446,9 @@ namespace ai_indoor_nav_api.Migrations
                     b.Property<int>("FloorId")
                         .HasColumnType("integer");
 
+                    b.Property<Geometry>("Geometry")
+                        .HasColumnType("geometry");
+
                     b.Property<bool>("IsVisible")
                         .HasColumnType("boolean");
 
@@ -502,39 +507,6 @@ namespace ai_indoor_nav_api.Migrations
                         .IsUnique();
 
                     b.ToTable("poi_categories");
-                });
-
-            modelBuilder.Entity("ai_indoor_nav_api.Models.PoiPoint", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
-
-                    b.Property<int>("PoiId")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("PointOrder")
-                        .HasColumnType("integer");
-
-                    b.Property<decimal>("X")
-                        .HasColumnType("decimal(12,9)");
-
-                    b.Property<decimal>("Y")
-                        .HasColumnType("decimal(12,9)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("PoiId", "PointOrder")
-                        .IsUnique()
-                        .HasDatabaseName("idx_poi_order");
-
-                    b.ToTable("poi_points");
                 });
 
             modelBuilder.Entity("ai_indoor_nav_api.Models.RouteEdge", b =>
@@ -644,80 +616,6 @@ namespace ai_indoor_nav_api.Migrations
                     b.ToTable("route_nodes");
                 });
 
-            modelBuilder.Entity("ai_indoor_nav_api.Models.Wall", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
-
-                    b.Property<int>("FloorId")
-                        .HasColumnType("integer");
-
-                    b.Property<decimal>("Height")
-                        .HasColumnType("decimal(6,2)");
-
-                    b.Property<bool>("IsVisible")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Name")
-                        .HasMaxLength(255)
-                        .HasColumnType("character varying(255)");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("updated_at");
-
-                    b.Property<string>("WallType")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("FloorId");
-
-                    b.ToTable("walls");
-                });
-
-            modelBuilder.Entity("ai_indoor_nav_api.Models.WallPoint", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
-
-                    b.Property<int>("PointOrder")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("WallId")
-                        .HasColumnType("integer");
-
-                    b.Property<decimal>("X")
-                        .HasColumnType("decimal(12,9)");
-
-                    b.Property<decimal>("Y")
-                        .HasColumnType("decimal(12,9)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("WallId", "PointOrder")
-                        .IsUnique()
-                        .HasDatabaseName("idx_wall_order");
-
-                    b.ToTable("wall_points");
-                });
-
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>
                 {
                     b.HasOne("Microsoft.AspNetCore.Identity.IdentityRole", null)
@@ -814,17 +712,6 @@ namespace ai_indoor_nav_api.Migrations
                     b.Navigation("Floor");
                 });
 
-            modelBuilder.Entity("ai_indoor_nav_api.Models.PoiPoint", b =>
-                {
-                    b.HasOne("ai_indoor_nav_api.Models.Poi", "Poi")
-                        .WithMany("PoiPoints")
-                        .HasForeignKey("PoiId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Poi");
-                });
-
             modelBuilder.Entity("ai_indoor_nav_api.Models.RouteEdge", b =>
                 {
                     b.HasOne("ai_indoor_nav_api.Models.Floor", "Floor")
@@ -863,28 +750,6 @@ namespace ai_indoor_nav_api.Migrations
                     b.Navigation("Floor");
                 });
 
-            modelBuilder.Entity("ai_indoor_nav_api.Models.Wall", b =>
-                {
-                    b.HasOne("ai_indoor_nav_api.Models.Floor", "Floor")
-                        .WithMany("Walls")
-                        .HasForeignKey("FloorId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Floor");
-                });
-
-            modelBuilder.Entity("ai_indoor_nav_api.Models.WallPoint", b =>
-                {
-                    b.HasOne("ai_indoor_nav_api.Models.Wall", "Wall")
-                        .WithMany("WallPoints")
-                        .HasForeignKey("WallId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Wall");
-                });
-
             modelBuilder.Entity("ai_indoor_nav_api.Models.BeaconType", b =>
                 {
                     b.Navigation("Beacons");
@@ -902,23 +767,11 @@ namespace ai_indoor_nav_api.Migrations
                     b.Navigation("Pois");
 
                     b.Navigation("RouteNodes");
-
-                    b.Navigation("Walls");
-                });
-
-            modelBuilder.Entity("ai_indoor_nav_api.Models.Poi", b =>
-                {
-                    b.Navigation("PoiPoints");
                 });
 
             modelBuilder.Entity("ai_indoor_nav_api.Models.PoiCategory", b =>
                 {
                     b.Navigation("Pois");
-                });
-
-            modelBuilder.Entity("ai_indoor_nav_api.Models.Wall", b =>
-                {
-                    b.Navigation("WallPoints");
                 });
 #pragma warning restore 612, 618
         }

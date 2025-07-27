@@ -39,8 +39,11 @@ builder.Services.AddCors(options =>
 });
 
 builder.Services.AddDbContext<MyDbContext>(options =>
-    options.UseNpgsql(Environment.GetEnvironmentVariable("DEFAULT_CONNECTION")));
-
+    options.UseNpgsql(
+        Environment.GetEnvironmentVariable("DEFAULT_CONNECTION"),
+        npgsqlOptions => npgsqlOptions.UseNetTopologySuite()
+    )
+);
 builder.Services.AddAuthentication(options =>
     {
         options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
