@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ai_indoor_nav_api.Data;
@@ -50,34 +51,45 @@ namespace ai_indoor_nav_api.Controllers
 
         // PUT: api/RouteNode/5
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutRouteNode(int id, RouteNode routeNode)
+        public async Task<IActionResult> PutRouteNode(int id, JsonElement jsonRouteNode)
         {
-            if (id != routeNode.Id)
-            {
-                return BadRequest();
-            }
+            var existingNode = await context.RouteNodes.FindAsync(id);
+            if (existingNode == null)
+                return NotFound();
 
-            // Update the UpdatedAt timestamp
-            routeNode.UpdatedAt = DateTime.UtcNow;
-
-            context.Entry(routeNode).State = EntityState.Modified;
-
-            try
+            foreach (var prop in jsonRouteNode.EnumerateObject())
             {
-                await context.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!RouteNodeExists(id))
+                switch (prop.Name.ToLower())
                 {
-                    return NotFound();
-                }
-                else
-                {
-                    throw;
+                    case "floorid":
+                        if (prop.Value.TryGetInt32(out var floorId))
+                            existingNode.FloorId = floorId;
+                        break;
+
+                    case "x":
+                        if (prop.Value.TryGetDecimal(out var x))
+                            existingNode.X = x;
+                        break;
+
+                    case "y":
+                        if (prop.Value.TryGetDecimal(out var y))
+                            existingNode.Y = y;
+                        break;
+
+                    case "nodetype":
+                        existingNode.NodeType = prop.Value.GetString() ?? "waypoint";
+                        break;
+
+                    case "isvisible":
+                        if (prop.Value.ValueKind == JsonValueKind.True || prop.Value.ValueKind == JsonValueKind.False)
+                            existingNode.IsVisible = prop.Value.GetBoolean();
+                        break;
                 }
             }
 
+            existingNode.UpdatedAt = DateTime.UtcNow;
+
+            await context.SaveChangesAsync();
             return NoContent();
         }
 

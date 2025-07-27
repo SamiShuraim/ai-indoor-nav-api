@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ai_indoor_nav_api.Data;
@@ -52,31 +53,48 @@ namespace ai_indoor_nav_api.Controllers
 
         // PUT: api/BeaconType/5
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutBeaconType(int id, BeaconType beaconType)
+        public async Task<IActionResult> PutBeaconType(int id, JsonElement jsonBeaconType)
         {
-            if (id != beaconType.Id)
-            {
-                return BadRequest();
-            }
+            var existingType = await context.BeaconTypes.FindAsync(id);
+            if (existingType == null)
+                return NotFound();
 
-            context.Entry(beaconType).State = EntityState.Modified;
-
-            try
+            foreach (var prop in jsonBeaconType.EnumerateObject())
             {
-                await context.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!BeaconTypeExists(id))
+                switch (prop.Name.ToLower())
                 {
-                    return NotFound();
-                }
-                else
-                {
-                    throw;
+                    case "name":
+                        existingType.Name = prop.Value.GetString() ?? "";
+                        break;
+
+                    case "description":
+                        existingType.Description = prop.Value.ValueKind == JsonValueKind.Null ? null : prop.Value.GetString();
+                        break;
+
+                    case "transmissionpower":
+                        if (prop.Value.ValueKind != JsonValueKind.Null && prop.Value.TryGetInt32(out var power))
+                            existingType.TransmissionPower = power;
+                        else
+                            existingType.TransmissionPower = null;
+                        break;
+
+                    case "batterylife":
+                        if (prop.Value.ValueKind != JsonValueKind.Null && prop.Value.TryGetInt32(out var batteryLife))
+                            existingType.BatteryLife = batteryLife;
+                        else
+                            existingType.BatteryLife = null;
+                        break;
+
+                    case "rangemeters":
+                        if (prop.Value.ValueKind != JsonValueKind.Null && prop.Value.TryGetDecimal(out var range))
+                            existingType.RangeMeters = range;
+                        else
+                            existingType.RangeMeters = null;
+                        break;
                 }
             }
 
+            await context.SaveChangesAsync();
             return NoContent();
         }
 

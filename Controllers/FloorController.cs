@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ai_indoor_nav_api.Data;
@@ -37,36 +38,36 @@ namespace ai_indoor_nav_api.Controllers
         }
 
         // PUT: api/Floor/5
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutFloor(int id, Floor floor)
+        public async Task<IActionResult> PutFloor(int id, JsonElement jsonFloor)
         {
-            if (id != floor.Id)
-            {
-                return BadRequest();
-            }
+            var existingFloor = await context.Floors.FindAsync(id);
+            if (existingFloor == null)
+                return NotFound();
 
-            // Update the UpdatedAt timestamp
-            floor.UpdatedAt = DateTime.UtcNow;
-
-            context.Entry(floor).State = EntityState.Modified;
-
-            try
+            foreach (var prop in jsonFloor.EnumerateObject())
             {
-                await context.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!FloorExists(id))
+                switch (prop.Name.ToLower())
                 {
-                    return NotFound();
-                }
-                else
-                {
-                    throw;
+                    case "name":
+                        existingFloor.Name = prop.Value.GetString() ?? "";
+                        break;
+
+                    case "floornumber":
+                        if (prop.Value.TryGetInt32(out var floorNumber))
+                            existingFloor.FloorNumber = floorNumber;
+                        break;
+
+                    case "buildingid":
+                        if (prop.Value.TryGetInt32(out var buildingId))
+                            existingFloor.BuildingId = buildingId;
+                        break;
                 }
             }
 
+            existingFloor.UpdatedAt = DateTime.UtcNow;
+
+            await context.SaveChangesAsync();
             return NoContent();
         }
 
