@@ -65,10 +65,6 @@ namespace ai_indoor_nav_api.Controllers
                         existingCategory.Color = prop.Value.GetString() ?? "#3B82F6";
                         break;
 
-                    case "icon":
-                        existingCategory.Icon = prop.Value.ValueKind == JsonValueKind.Null ? null : prop.Value.GetString();
-                        break;
-
                     case "description":
                         existingCategory.Description = prop.Value.ValueKind == JsonValueKind.Null ? null : prop.Value.GetString();
                         break;

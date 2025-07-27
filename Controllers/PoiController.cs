@@ -6,10 +6,12 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ai_indoor_nav_api.Data;
+using ai_indoor_nav_api.Enums;
 using ai_indoor_nav_api.Models;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 using Newtonsoft.Json;
+using static System.DateTime;
 
 namespace ai_indoor_nav_api.Controllers
 {
@@ -129,18 +131,21 @@ namespace ai_indoor_nav_api.Controllers
                 return BadRequest($"Invalid geometry: {ex.Message}");
             }
 
+            if (!Enum.TryParse<PoiType>(input.Properties.PoiType, true, out var parsedType))
+                return BadRequest("Invalid PoiType. Allowed values: Room, Stairs, Elevator, Wall.");
+
             var poi = new Poi
             {
                 Name = input.Properties.Name,
                 FloorId = input.Properties.FloorId,
                 CategoryId = input.Properties.CategoryId,
                 Description = input.Properties.Description,
-                PoiType = input.Properties.PoiType,
+                PoiType = parsedType,
                 Color = input.Properties.Color,
                 IsVisible = input.Properties.IsVisible,
                 Geometry = geometry,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
+                CreatedAt = UtcNow,
+                UpdatedAt = UtcNow
             };
 
             context.Pois.Add(poi);
