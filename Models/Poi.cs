@@ -1,6 +1,9 @@
 ﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json.Serialization;
+using ai_indoor_nav_api.Enums;
+using NetTopologySuite.Geometries;
+using static System.DateTime;
 
 namespace ai_indoor_nav_api.Models
 {
@@ -8,7 +11,7 @@ namespace ai_indoor_nav_api.Models
     public class PoiCategory
     {
         [Key]
-        public int Id { get; set; }
+        public int Id { get; init; }
 
         [Required]
         [StringLength(100)]
@@ -17,23 +20,20 @@ namespace ai_indoor_nav_api.Models
         [StringLength(7)]
         public string Color { get; set; } = "#3B82F6"; // Hex color code
 
-        [StringLength(50)]
-        public string? Icon { get; set; } // Icon identifier
-
         public string? Description { get; set; }
 
         [JsonIgnore]
         public ICollection<Poi> Pois { get; set; } = new List<Poi>();
     }
-
+    
     [Table("poi")]
     public class Poi
     {
         [Key]
-        public int Id { get; set; }
+        public int Id { get; init; }
 
         [Required]
-        public int FloorId { get; set; }
+        public int FloorId { get; init; }
 
         public int? CategoryId { get; set; }
 
@@ -43,8 +43,9 @@ namespace ai_indoor_nav_api.Models
 
         public string? Description { get; set; }
 
-        [StringLength(50)]
-        public string PoiType { get; set; } = "room"; // room, area, zone, facility
+        [Required]
+        [EnumDataType(typeof(PoiType))]
+        public PoiType PoiType { get; set; } = PoiType.Room;
 
         [StringLength(7)]
         public string Color { get; set; } = "#3B82F6";
@@ -52,43 +53,19 @@ namespace ai_indoor_nav_api.Models
         public bool IsVisible { get; set; } = true;
 
         [Column("created_at")]
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public DateTime CreatedAt { get; set; } = UtcNow;
 
         [Column("updated_at")]
-        public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+        public DateTime UpdatedAt { get; init; } = UtcNow;
+
+        // Geometry field: Point, Polygon, etc.
+        public Geometry? Geometry { get; set; }
 
         [ForeignKey("FloorId")]
         [JsonIgnore]
-        public Floor? Floor { get; set; }
+        public Floor? Floor { get; init; }
 
         [ForeignKey("CategoryId")]
         public PoiCategory? Category { get; set; }
-
-        public ICollection<PoiPoint> PoiPoints { get; set; } = new List<PoiPoint>();
-    }
-
-    [Table("poi_points")]
-    public class PoiPoint
-    {
-        [Key]
-        public int Id { get; set; }
-
-        [Required]
-        public int PoiId { get; set; }
-
-        [Column(TypeName = "decimal(12,9)")]
-        public decimal X { get; set; }
-
-        [Column(TypeName = "decimal(12,9)")]
-        public decimal Y { get; set; }
-
-        public int PointOrder { get; set; } // Order of points in polygon
-
-        [Column("created_at")]
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-
-        [ForeignKey("PoiId")]
-        [JsonIgnore]
-        public Poi? Poi { get; set; }
     }
 }

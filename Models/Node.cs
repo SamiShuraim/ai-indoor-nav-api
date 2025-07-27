@@ -1,6 +1,8 @@
 ﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json.Serialization;
+using NetTopologySuite.Geometries;
+using static System.DateTime;
 
 namespace ai_indoor_nav_api.Models
 {
@@ -12,24 +14,19 @@ namespace ai_indoor_nav_api.Models
 
         [Required]
         public int FloorId { get; set; }
+        
+        [Column("connected_node_ids", TypeName = "integer[]")]
+        public List<int> ConnectedNodeIds { get; set; } = new();  // Your edges
 
-        [Column(TypeName = "decimal(12,9)")]
-        public decimal X { get; set; }
-
-        [Column(TypeName = "decimal(12,9)")]
-        public decimal Y { get; set; }
-
-        [Required]
-        [StringLength(50)]
-        public string NodeType { get; set; } = "waypoint"; // waypoint, entrance, exit, junction
+        public Point? Location { get; set; }  // Now GeoJSON-compatible
 
         public bool IsVisible { get; set; } = true;
 
         [Column("created_at")]
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public DateTime CreatedAt { get; set; } = UtcNow;
 
         [Column("updated_at")]
-        public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+        public DateTime UpdatedAt { get; set; } = UtcNow;
 
         [ForeignKey("FloorId")]
         [JsonIgnore]
