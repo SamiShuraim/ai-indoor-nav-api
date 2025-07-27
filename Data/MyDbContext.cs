@@ -21,38 +21,13 @@ namespace ai_indoor_nav_api.Data
         {
             base.OnModelCreating(builder);
 
-            // RouteEdge configuration
-            builder.Entity<RouteEdge>()
-                .HasOne(e => e.FromNode)
-                .WithMany()
-                .HasForeignKey(e => e.FromNodeId)
-                .OnDelete(DeleteBehavior.Restrict);
-
-            builder.Entity<RouteEdge>()
-                .HasOne(e => e.ToNode)
-                .WithMany()
-                .HasForeignKey(e => e.ToNodeId)
-                .OnDelete(DeleteBehavior.Restrict);
-
-            builder.Entity<RouteEdge>()
-                .HasIndex(e => new { e.FromNodeId, e.ToNodeId })
-                .IsUnique();
-
-            builder.Entity<RouteEdge>()
-                .HasIndex(e => new { e.FloorId, e.FromNodeId })
-                .HasDatabaseName("idx_floor_from_node");
-
-            builder.Entity<RouteEdge>()
-                .HasIndex(e => new { e.FloorId, e.ToNodeId })
-                .HasDatabaseName("idx_floor_to_node");
-
-            builder.Entity<RouteEdge>()
-               .HasCheckConstraint("no_self_reference", "\"from_node_id\" != \"to_node_id\"");
-
-            // RouteNode indices
+            builder.Entity<Poi>()
+                .Property(p => p.PoiType)
+                .HasConversion<string>();
+            
             builder.Entity<RouteNode>()
-                .HasIndex(e => new { e.FloorId, e.X, e.Y })
-                .HasDatabaseName("idx_floor_coordinates");
+                .HasIndex(r => r.Location)
+                .HasMethod("GIST");
 
             // POI configuration
             builder.Entity<PoiCategory>()
@@ -93,7 +68,6 @@ namespace ai_indoor_nav_api.Data
 
         // Navigation entities
         public DbSet<RouteNode> RouteNodes { get; set; }
-        public DbSet<RouteEdge> RouteEdges { get; set; }
 
         // POI entities
         public DbSet<PoiCategory> PoiCategories { get; set; }
