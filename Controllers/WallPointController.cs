@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ai_indoor_nav_api.Data;
@@ -49,34 +50,40 @@ namespace ai_indoor_nav_api.Controllers
 
         // PUT: api/WallPoint/5
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutWallPoint(int id, WallPoint wallPoint)
+        public async Task<IActionResult> PutWallPoint(int id, JsonElement jsonWallPoint)
         {
-            if (id != wallPoint.Id)
-            {
-                return BadRequest();
-            }
+            var existingPoint = await context.WallPoints.FindAsync(id);
+            if (existingPoint == null)
+                return NotFound();
 
-            // Update the timestamp
-            wallPoint.CreatedAt = DateTime.UtcNow;
-
-            context.Entry(wallPoint).State = EntityState.Modified;
-
-            try
+            foreach (var prop in jsonWallPoint.EnumerateObject())
             {
-                await context.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!WallPointExists(id))
+                switch (prop.Name.ToLower())
                 {
-                    return NotFound();
-                }
-                else
-                {
-                    throw;
+                    case "wallid":
+                        if (prop.Value.TryGetInt32(out var wallId))
+                            existingPoint.WallId = wallId;
+                        break;
+
+                    case "x":
+                        if (prop.Value.TryGetDecimal(out var x))
+                            existingPoint.X = x;
+                        break;
+
+                    case "y":
+                        if (prop.Value.TryGetDecimal(out var y))
+                            existingPoint.Y = y;
+                        break;
+
+                    case "pointorder":
+                        if (prop.Value.TryGetInt32(out var order))
+                            existingPoint.PointOrder = order;
+                        break;
                 }
             }
 
+            // createdAt is not updated
+            await context.SaveChangesAsync();
             return NoContent();
         }
 

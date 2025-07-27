@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ai_indoor_nav_api.Data;
@@ -43,38 +44,47 @@ namespace ai_indoor_nav_api.Controllers
                 .ToListAsync();
         }
 
-        // PUT: api/PoiPoint/5
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutPoiPoint(int id, PoiPoint poiPoint)
+        public async Task<IActionResult> PutPoiPoint(int id, JsonElement jsonPoiPoint)
         {
-            if (id != poiPoint.Id)
-            {
-                return BadRequest();
-            }
+            var existingPoiPoint = await context.PoiPoints.FindAsync(id);
+            if (existingPoiPoint == null)
+                return NotFound();
 
-            // Update the timestamp
-            poiPoint.CreatedAt = DateTime.UtcNow;
-
-            context.Entry(poiPoint).State = EntityState.Modified;
-
-            try
+            foreach (var prop in jsonPoiPoint.EnumerateObject())
             {
-                await context.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!PoiPointExists(id))
+                switch (prop.Name.ToLower())
                 {
-                    return NotFound();
-                }
-                else
-                {
-                    throw;
+                    case "poiid":
+                        if (prop.Value.TryGetInt32(out var poiId))
+                            existingPoiPoint.PoiId = poiId;
+                        break;
+
+                    case "x":
+                        if (prop.Value.TryGetDecimal(out var x))
+                            existingPoiPoint.X = x;
+                        break;
+
+                    case "y":
+                        if (prop.Value.TryGetDecimal(out var y))
+                            existingPoiPoint.Y = y;
+                        break;
+
+                    case "pointorder":
+                        if (prop.Value.TryGetInt32(out var order))
+                            existingPoiPoint.PointOrder = order;
+                        break;
                 }
             }
 
+            existingPoiPoint.CreatedAt = existingPoiPoint.CreatedAt; // keep original createdAt unchanged
+
+            // You might want to add an UpdatedAt property to PoiPoint for consistency? If so, update here.
+            // For now, just save changes:
+            await context.SaveChangesAsync();
             return NoContent();
         }
+
 
         // POST: api/PoiPoint
         [HttpPost]

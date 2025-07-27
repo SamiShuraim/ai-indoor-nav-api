@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -36,36 +37,30 @@ namespace ai_indoor_nav_api.Controllers
         }
 
         // PUT: api/Building/5
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutBuilding(int id, Building building)
+        public async Task<IActionResult> PutBuilding(int id, JsonElement jsonBuilding)
         {
-            if (id != building.Id)
-            {
-                return BadRequest();
-            }
+            var existingBuilding = await context.Buildings.FindAsync(id);
+            if (existingBuilding == null)
+                return NotFound();
 
-            // Update the UpdatedAt timestamp
-            building.UpdatedAt = DateTime.UtcNow;
-
-            context.Entry(building).State = EntityState.Modified;
-
-            try
+            foreach (var prop in jsonBuilding.EnumerateObject())
             {
-                await context.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!BuildingExists(id))
+                switch (prop.Name.ToLower())
                 {
-                    return NotFound();
-                }
-                else
-                {
-                    throw;
+                    case "name":
+                        existingBuilding.Name = prop.Value.GetString() ?? "";
+                        break;
+
+                    case "description":
+                        existingBuilding.Description = prop.Value.ValueKind == JsonValueKind.Null ? null : prop.Value.GetString();
+                        break;
                 }
             }
 
+            existingBuilding.UpdatedAt = DateTime.UtcNow;
+
+            await context.SaveChangesAsync();
             return NoContent();
         }
 

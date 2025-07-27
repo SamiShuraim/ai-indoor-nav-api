@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ai_indoor_nav_api.Data;
@@ -60,34 +61,44 @@ namespace ai_indoor_nav_api.Controllers
 
         // PUT: api/Wall/5
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutWall(int id, Wall wall)
+        public async Task<IActionResult> PutWall(int id, JsonElement jsonWall)
         {
-            if (id != wall.Id)
-            {
-                return BadRequest();
-            }
+            var existingWall = await context.Walls.FindAsync(id);
+            if (existingWall == null)
+                return NotFound();
 
-            // Update the UpdatedAt timestamp
-            wall.UpdatedAt = DateTime.UtcNow;
-
-            context.Entry(wall).State = EntityState.Modified;
-
-            try
+            foreach (var prop in jsonWall.EnumerateObject())
             {
-                await context.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!WallExists(id))
+                switch (prop.Name.ToLower())
                 {
-                    return NotFound();
-                }
-                else
-                {
-                    throw;
+                    case "floorid":
+                        if (prop.Value.TryGetInt32(out var floorId))
+                            existingWall.FloorId = floorId;
+                        break;
+
+                    case "name":
+                        existingWall.Name = prop.Value.ValueKind == JsonValueKind.Null ? null : prop.Value.GetString();
+                        break;
+
+                    case "walltype":
+                        existingWall.WallType = prop.Value.GetString() ?? "interior";
+                        break;
+
+                    case "height":
+                        if (prop.Value.TryGetDecimal(out var height))
+                            existingWall.Height = height;
+                        break;
+
+                    case "isvisible":
+                        if (prop.Value.ValueKind == JsonValueKind.True || prop.Value.ValueKind == JsonValueKind.False)
+                            existingWall.IsVisible = prop.Value.GetBoolean();
+                        break;
                 }
             }
 
+            existingWall.UpdatedAt = DateTime.UtcNow;
+
+            await context.SaveChangesAsync();
             return NoContent();
         }
 

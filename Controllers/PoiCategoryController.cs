@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ai_indoor_nav_api.Data;
@@ -45,33 +46,38 @@ namespace ai_indoor_nav_api.Controllers
             return poiCategory;
         }
 
-        // PUT: api/PoiCategory/5
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutPoiCategory(int id, PoiCategory poiCategory)
+        public async Task<IActionResult> PutPoiCategory(int id, JsonElement jsonPoiCategory)
         {
-            if (id != poiCategory.Id)
-            {
-                return BadRequest();
-            }
+            var existingCategory = await context.PoiCategories.FindAsync(id);
+            if (existingCategory == null)
+                return NotFound();
 
-            context.Entry(poiCategory).State = EntityState.Modified;
-
-            try
+            foreach (var prop in jsonPoiCategory.EnumerateObject())
             {
-                await context.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!PoiCategoryExists(id))
+                switch (prop.Name.ToLower())
                 {
-                    return NotFound();
-                }
-                else
-                {
-                    throw;
+                    case "name":
+                        existingCategory.Name = prop.Value.GetString() ?? "";
+                        break;
+
+                    case "color":
+                        existingCategory.Color = prop.Value.GetString() ?? "#3B82F6";
+                        break;
+
+                    case "icon":
+                        existingCategory.Icon = prop.Value.ValueKind == JsonValueKind.Null ? null : prop.Value.GetString();
+                        break;
+
+                    case "description":
+                        existingCategory.Description = prop.Value.ValueKind == JsonValueKind.Null ? null : prop.Value.GetString();
+                        break;
                 }
             }
 
+            // No UpdatedAt property in this model, add if needed.
+
+            await context.SaveChangesAsync();
             return NoContent();
         }
 

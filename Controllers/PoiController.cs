@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ai_indoor_nav_api.Data;
@@ -50,36 +51,57 @@ namespace ai_indoor_nav_api.Controllers
         // PUT: api/Poi/5
         // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutPoi(int id, Poi poi)
+        public async Task<IActionResult> PutPoi(int id, JsonElement jsonPoi)
         {
-            if (id != poi.Id)
-            {
-                return BadRequest();
-            }
+            var existingPoi = await context.Pois.FindAsync(id);
+            if (existingPoi == null)
+                return NotFound();
 
-            // Update the UpdatedAt timestamp
-            poi.UpdatedAt = DateTime.UtcNow;
-
-            context.Entry(poi).State = EntityState.Modified;
-
-            try
+            foreach (var prop in jsonPoi.EnumerateObject())
             {
-                await context.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!PoiExists(id))
+                switch (prop.Name.ToLower())
                 {
-                    return NotFound();
-                }
-                else
-                {
-                    throw;
+                    case "floorid":
+                        if (prop.Value.TryGetInt32(out var floorId))
+                            existingPoi.FloorId = floorId;
+                        break;
+
+                    case "categoryid":
+                        if (prop.Value.ValueKind != JsonValueKind.Null && prop.Value.TryGetInt32(out var categoryId))
+                            existingPoi.CategoryId = categoryId;
+                        else
+                            existingPoi.CategoryId = null;
+                        break;
+
+                    case "name":
+                        existingPoi.Name = prop.Value.GetString() ?? "";
+                        break;
+
+                    case "description":
+                        existingPoi.Description = prop.Value.ValueKind == JsonValueKind.Null ? null : prop.Value.GetString();
+                        break;
+
+                    case "poitype":
+                        existingPoi.PoiType = prop.Value.GetString() ?? "room";
+                        break;
+
+                    case "color":
+                        existingPoi.Color = prop.Value.GetString() ?? "#3B82F6";
+                        break;
+
+                    case "isvisible":
+                        if (prop.Value.ValueKind == JsonValueKind.True || prop.Value.ValueKind == JsonValueKind.False)
+                            existingPoi.IsVisible = prop.Value.GetBoolean();
+                        break;
                 }
             }
 
+            existingPoi.UpdatedAt = DateTime.UtcNow;
+
+            await context.SaveChangesAsync();
             return NoContent();
         }
+
 
         // POST: api/Poi
         // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754

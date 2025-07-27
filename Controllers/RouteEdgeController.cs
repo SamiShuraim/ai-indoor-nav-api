@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ai_indoor_nav_api.Data;
@@ -59,34 +60,55 @@ namespace ai_indoor_nav_api.Controllers
 
         // PUT: api/RouteEdge/5
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutRouteEdge(int id, RouteEdge routeEdge)
+        public async Task<IActionResult> PutRouteEdge(int id, JsonElement jsonRouteEdge)
         {
-            if (id != routeEdge.Id)
-            {
-                return BadRequest();
-            }
+            var existingEdge = await context.RouteEdges.FindAsync(id);
+            if (existingEdge == null)
+                return NotFound();
 
-            // Update the UpdatedAt timestamp
-            routeEdge.UpdatedAt = DateTime.UtcNow;
-
-            context.Entry(routeEdge).State = EntityState.Modified;
-
-            try
+            foreach (var prop in jsonRouteEdge.EnumerateObject())
             {
-                await context.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!RouteEdgeExists(id))
+                switch (prop.Name.ToLower())
                 {
-                    return NotFound();
-                }
-                else
-                {
-                    throw;
+                    case "floorid":
+                        if (prop.Value.TryGetInt32(out var floorId))
+                            existingEdge.FloorId = floorId;
+                        break;
+
+                    case "fromnodeid":
+                        if (prop.Value.TryGetInt32(out var fromNodeId))
+                            existingEdge.FromNodeId = fromNodeId;
+                        break;
+
+                    case "tonodeid":
+                        if (prop.Value.TryGetInt32(out var toNodeId))
+                            existingEdge.ToNodeId = toNodeId;
+                        break;
+
+                    case "weight":
+                        if (prop.Value.TryGetDecimal(out var weight))
+                            existingEdge.Weight = weight;
+                        break;
+
+                    case "edgetype":
+                        existingEdge.EdgeType = prop.Value.GetString() ?? "walkable";
+                        break;
+
+                    case "isbidirectional":
+                        if (prop.Value.ValueKind == JsonValueKind.True || prop.Value.ValueKind == JsonValueKind.False)
+                            existingEdge.IsBidirectional = prop.Value.GetBoolean();
+                        break;
+
+                    case "isvisible":
+                        if (prop.Value.ValueKind == JsonValueKind.True || prop.Value.ValueKind == JsonValueKind.False)
+                            existingEdge.IsVisible = prop.Value.GetBoolean();
+                        break;
                 }
             }
 
+            existingEdge.UpdatedAt = DateTime.UtcNow;
+
+            await context.SaveChangesAsync();
             return NoContent();
         }
 
