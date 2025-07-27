@@ -10,12 +10,6 @@ namespace ai_indoor_nav_api.Data
             : base(options)
         {
         }
-        
-        protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-        {
-            optionsBuilder.UseNpgsql("your_connection_string", 
-                o => o.UseNetTopologySuite());
-        }
 
         protected override void OnModelCreating(ModelBuilder builder)
         {

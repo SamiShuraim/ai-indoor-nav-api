@@ -53,10 +53,10 @@ namespace ai_indoor_nav_api.Models
         public bool IsVisible { get; set; } = true;
 
         [Column("created_at")]
-        public DateTime CreatedAt { get; set; } = UtcNow;
+        public DateTime CreatedAt { get; init; } = UtcNow;
 
         [Column("updated_at")]
-        public DateTime UpdatedAt { get; init; } = UtcNow;
+        public DateTime UpdatedAt { get; set; } = UtcNow;
 
         // Geometry field: Point, Polygon, etc.
         public Geometry? Geometry { get; set; }
