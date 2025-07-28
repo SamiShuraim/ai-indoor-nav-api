@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ai_indoor_nav_api.Data;
 using ai_indoor_nav_api.Models;
+using NetTopologySuite.IO;
+using Newtonsoft.Json;
 
 namespace ai_indoor_nav_api.Controllers
 {
@@ -12,25 +14,47 @@ namespace ai_indoor_nav_api.Controllers
     {
         // GET: api/Beacon
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Beacon>>> GetBeacons([FromQuery] int? floor, [FromQuery] int? building)
+        public async Task<ActionResult<IEnumerable<object>>> GetBeacons([FromQuery] int? floor, [FromQuery] int? building)
         {
             var query = context.Beacons
                 .Include(b => b.BeaconType)
-                .Include(b => b.Floor) // Include Floor to access BuildingId
+                .Include(b => b.Floor)
                 .AsQueryable();
 
             if (floor.HasValue)
-            {
                 query = query.Where(b => b.FloorId == floor.Value);
-            }
 
             if (building.HasValue)
-            {
-                query = query.Where(b => b.Floor!.BuildingId == building.Value);
-            }
+                query = query.Where(b => b.Floor != null && b.Floor.BuildingId == building.Value);
 
             var beacons = await query.ToListAsync();
-            return Ok(beacons);
+            var writer = new GeoJsonWriter();
+
+            var features = beacons.Select(beacon => new
+            {
+                type = "Feature",
+                geometry = JsonConvert.DeserializeObject(writer.Write(beacon.Geometry)),
+                properties = new
+                {
+                    beacon.Id,
+                    beacon.Name,
+                    beacon.FloorId,
+                    beacon.BeaconTypeId,
+                    beacon.Uuid,
+                    beacon.MajorId,
+                    beacon.MinorId,
+                    beacon.IsActive,
+                    beacon.IsVisible,
+                    beacon.BatteryLevel,
+                    beacon.LastSeen,
+                    beacon.InstallationDate,
+                    beacon.CreatedAt,
+                    beacon.UpdatedAt,
+                    BeaconTypeName = beacon.BeaconType?.Name // renamed to avoid duplicate
+                }
+            });
+
+            return Ok(features.ToList()); // use ToList() not ToListAsync()
         }
 
         // GET: api/Beacon/5
@@ -133,21 +157,6 @@ namespace ai_indoor_nav_api.Controllers
                             existingBeacon.MinorId = minorId;
                         else
                             existingBeacon.MinorId = null;
-                        break;
-
-                    case "x":
-                        if (prop.Value.TryGetDecimal(out var x))
-                            existingBeacon.X = x;
-                        break;
-
-                    case "y":
-                        if (prop.Value.TryGetDecimal(out var y))
-                            existingBeacon.Y = y;
-                        break;
-
-                    case "z":
-                        if (prop.Value.TryGetDecimal(out var z))
-                            existingBeacon.Z = z;
                         break;
 
                     case "isactive":

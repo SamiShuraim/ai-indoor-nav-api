@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json.Serialization;
+using NetTopologySuite.Geometries;
 
 namespace ai_indoor_nav_api.Models
 {
@@ -61,14 +62,9 @@ namespace ai_indoor_nav_api.Models
         [Column("minor_id")]
         public int? MinorId { get; set; }
 
-        [Column("x", TypeName = "numeric(12,9)")]
-        public decimal X { get; set; }
-
-        [Column("y", TypeName = "numeric(12,9)")]
-        public decimal Y { get; set; }
-
-        [Column("z", TypeName = "numeric(8,4)")]
-        public decimal Z { get; set; } = 0;
+        
+        [Column("geometry", TypeName = "geometry (Point)")]
+        public Point? Geometry { get; set; }
 
         [Column("is_active")]
         public bool IsActive { get; set; } = true;

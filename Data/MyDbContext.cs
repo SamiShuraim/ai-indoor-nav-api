@@ -42,10 +42,6 @@ namespace ai_indoor_nav_api.Data
                 .IsUnique();
 
             builder.Entity<Beacon>()
-                .HasIndex(b => new { b.FloorId, b.X, b.Y })
-                .HasDatabaseName("idx_floor_location");
-
-            builder.Entity<Beacon>()
                 .HasIndex(b => new { b.Uuid, b.MajorId, b.MinorId })
                 .HasDatabaseName("idx_beacon_identifiers");
 
