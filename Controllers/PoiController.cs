@@ -20,9 +20,21 @@ namespace ai_indoor_nav_api.Controllers
     public class PoiController(MyDbContext context) : ControllerBase
     {
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<object>>> GetPois()
+        public async Task<ActionResult<IEnumerable<object>>> GetPois([FromQuery] int? floor, [FromQuery] int? building)
         {
-            var pois = await context.Pois.ToListAsync();
+            var query = context.Pois.Include(p => p.Floor).AsQueryable();
+
+            if (floor.HasValue)
+            {
+                query = query.Where(p => p.FloorId == floor.Value);
+            }
+
+            if (building.HasValue)
+            {
+                query = query.Where(p => p.Floor!.BuildingId == building.Value);
+            }
+
+            var pois = await query.ToListAsync();
             var writer = new GeoJsonWriter();
 
             var features = pois.Select(poi => new

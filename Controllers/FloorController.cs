@@ -9,16 +9,26 @@ namespace ai_indoor_nav_api.Controllers
     [Route("api/[controller]")]
     [ApiController]
     public class FloorController(MyDbContext context) : ControllerBase
-    {
-        // GET: api/Floor
+    { 
+        // GET: api/Floor?building=3
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Floor>>> GetFloors()
+        public async Task<ActionResult<IEnumerable<Floor>>> GetFloors([FromQuery] int? building)
         {
-            return await context.Floors
+            var query = context.Floors
                 .Include(f => f.Building)
+                .AsQueryable();
+
+            if (building.HasValue)
+            {
+                query = query.Where(f => f.BuildingId == building.Value);
+            }
+
+            var floors = await query
                 .OrderBy(f => f.BuildingId)
                 .ThenBy(f => f.FloorNumber)
                 .ToListAsync();
+
+            return Ok(floors);
         }
 
         // GET: api/Floor/5
@@ -100,17 +110,6 @@ namespace ai_indoor_nav_api.Controllers
             await context.SaveChangesAsync();
 
             return NoContent();
-        }
-        
-        // GET: api/Floor/building/5
-        [HttpGet("building/{buildingId}")]
-        public async Task<ActionResult<IEnumerable<Floor>>> GetFloorsByBuildingId(int buildingId)
-        {
-            return await context.Floors
-                .Where(f => f.BuildingId == buildingId)
-                .Include(f => f.Building)
-                .OrderBy(f => f.FloorNumber)
-                .ToListAsync();
         }
 
         private bool FloorExists(int id)

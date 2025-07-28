@@ -12,11 +12,25 @@ namespace ai_indoor_nav_api.Controllers
     {
         // GET: api/Beacon
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Beacon>>> GetBeacons()
+        public async Task<ActionResult<IEnumerable<Beacon>>> GetBeacons([FromQuery] int? floor, [FromQuery] int? building)
         {
-            return await context.Beacons
+            var query = context.Beacons
                 .Include(b => b.BeaconType)
-                .ToListAsync();
+                .Include(b => b.Floor) // Include Floor to access BuildingId
+                .AsQueryable();
+
+            if (floor.HasValue)
+            {
+                query = query.Where(b => b.FloorId == floor.Value);
+            }
+
+            if (building.HasValue)
+            {
+                query = query.Where(b => b.Floor!.BuildingId == building.Value);
+            }
+
+            var beacons = await query.ToListAsync();
+            return Ok(beacons);
         }
 
         // GET: api/Beacon/5
