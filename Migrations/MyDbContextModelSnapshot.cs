@@ -246,6 +246,10 @@ namespace ai_indoor_nav_api.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("floor_id");
 
+                    b.Property<Point>("Geometry")
+                        .HasColumnType("geometry (Point)")
+                        .HasColumnName("geometry");
+
                     b.Property<DateTime?>("InstallationDate")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("installation_date");
@@ -285,24 +289,11 @@ namespace ai_indoor_nav_api.Migrations
                         .HasColumnType("character varying(36)")
                         .HasColumnName("uuid");
 
-                    b.Property<decimal>("X")
-                        .HasColumnType("numeric(12,9)")
-                        .HasColumnName("x");
-
-                    b.Property<decimal>("Y")
-                        .HasColumnType("numeric(12,9)")
-                        .HasColumnName("y");
-
-                    b.Property<decimal>("Z")
-                        .HasColumnType("numeric(8,4)")
-                        .HasColumnName("z");
-
                     b.HasKey("Id");
 
                     b.HasIndex("BeaconTypeId");
 
-                    b.HasIndex("FloorId", "X", "Y")
-                        .HasDatabaseName("idx_floor_location");
+                    b.HasIndex("FloorId");
 
                     b.HasIndex("Uuid", "MajorId", "MinorId")
                         .IsUnique()
