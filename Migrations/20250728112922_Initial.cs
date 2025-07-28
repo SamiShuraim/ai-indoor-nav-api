@@ -1,5 +1,7 @@
 ﻿using System;
+using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore.Migrations;
+using NetTopologySuite.Geometries;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
@@ -7,11 +9,14 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace ai_indoor_nav_api.Migrations
 {
     /// <inheritdoc />
-    public partial class InitialCreate : Migration
+    public partial class Initial : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.AlterDatabase()
+                .Annotation("Npgsql:PostgresExtension:postgis", ",,");
+
             migrationBuilder.CreateTable(
                 name: "AspNetRoles",
                 columns: table => new
@@ -92,7 +97,6 @@ namespace ai_indoor_nav_api.Migrations
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
                     Name = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
                     Color = table.Column<string>(type: "character varying(7)", maxLength: 7, nullable: false),
-                    Icon = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
                     Description = table.Column<string>(type: "text", nullable: true)
                 },
                 constraints: table =>
@@ -241,9 +245,7 @@ namespace ai_indoor_nav_api.Migrations
                     uuid = table.Column<string>(type: "character varying(36)", maxLength: 36, nullable: true),
                     major_id = table.Column<int>(type: "integer", nullable: true),
                     minor_id = table.Column<int>(type: "integer", nullable: true),
-                    x = table.Column<decimal>(type: "numeric(12,9)", nullable: false),
-                    y = table.Column<decimal>(type: "numeric(12,9)", nullable: false),
-                    z = table.Column<decimal>(type: "numeric(8,4)", nullable: false),
+                    geometry = table.Column<Point>(type: "geometry (Point)", nullable: true),
                     is_active = table.Column<bool>(type: "boolean", nullable: false),
                     is_visible = table.Column<bool>(type: "boolean", nullable: false),
                     battery_level = table.Column<int>(type: "integer", nullable: false),
@@ -278,11 +280,12 @@ namespace ai_indoor_nav_api.Migrations
                     CategoryId = table.Column<int>(type: "integer", nullable: true),
                     Name = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: false),
                     Description = table.Column<string>(type: "text", nullable: true),
-                    PoiType = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: false),
+                    PoiType = table.Column<string>(type: "text", nullable: false),
                     Color = table.Column<string>(type: "character varying(7)", maxLength: 7, nullable: false),
                     IsVisible = table.Column<bool>(type: "boolean", nullable: false),
                     created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    updated_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
+                    updated_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    Geometry = table.Column<Geometry>(type: "geometry", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -307,9 +310,8 @@ namespace ai_indoor_nav_api.Migrations
                     Id = table.Column<int>(type: "integer", nullable: false)
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
                     FloorId = table.Column<int>(type: "integer", nullable: false),
-                    X = table.Column<decimal>(type: "numeric(12,9)", nullable: false),
-                    Y = table.Column<decimal>(type: "numeric(12,9)", nullable: false),
-                    NodeType = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: false),
+                    connected_node_ids = table.Column<List<int>>(type: "integer[]", nullable: false),
+                    Location = table.Column<Point>(type: "geometry", nullable: true),
                     IsVisible = table.Column<bool>(type: "boolean", nullable: false),
                     created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     updated_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
@@ -322,117 +324,6 @@ namespace ai_indoor_nav_api.Migrations
                         column: x => x.FloorId,
                         principalTable: "floors",
                         principalColumn: "id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "walls",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "integer", nullable: false)
-                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
-                    FloorId = table.Column<int>(type: "integer", nullable: false),
-                    Name = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: true),
-                    WallType = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: false),
-                    Height = table.Column<decimal>(type: "numeric(6,2)", nullable: false),
-                    IsVisible = table.Column<bool>(type: "boolean", nullable: false),
-                    created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    updated_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_walls", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_walls_floors_FloorId",
-                        column: x => x.FloorId,
-                        principalTable: "floors",
-                        principalColumn: "id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "poi_points",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "integer", nullable: false)
-                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
-                    PoiId = table.Column<int>(type: "integer", nullable: false),
-                    X = table.Column<decimal>(type: "numeric(12,9)", nullable: false),
-                    Y = table.Column<decimal>(type: "numeric(12,9)", nullable: false),
-                    PointOrder = table.Column<int>(type: "integer", nullable: false),
-                    created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_poi_points", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_poi_points_poi_PoiId",
-                        column: x => x.PoiId,
-                        principalTable: "poi",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "route_edges",
-                columns: table => new
-                {
-                    id = table.Column<int>(type: "integer", nullable: false)
-                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
-                    floor_id = table.Column<int>(type: "integer", nullable: false),
-                    from_node_id = table.Column<int>(type: "integer", nullable: false),
-                    to_node_id = table.Column<int>(type: "integer", nullable: false),
-                    weight = table.Column<decimal>(type: "numeric(8,4)", nullable: false),
-                    edge_type = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: false),
-                    is_bidirectional = table.Column<bool>(type: "boolean", nullable: false),
-                    is_visible = table.Column<bool>(type: "boolean", nullable: false),
-                    created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    updated_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_route_edges", x => x.id);
-                    table.CheckConstraint("no_self_reference", "\"from_node_id\" != \"to_node_id\"");
-                    table.ForeignKey(
-                        name: "FK_route_edges_floors_floor_id",
-                        column: x => x.floor_id,
-                        principalTable: "floors",
-                        principalColumn: "id",
-                        onDelete: ReferentialAction.Cascade);
-                    table.ForeignKey(
-                        name: "FK_route_edges_route_nodes_from_node_id",
-                        column: x => x.from_node_id,
-                        principalTable: "route_nodes",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Restrict);
-                    table.ForeignKey(
-                        name: "FK_route_edges_route_nodes_to_node_id",
-                        column: x => x.to_node_id,
-                        principalTable: "route_nodes",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Restrict);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "wall_points",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "integer", nullable: false)
-                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
-                    WallId = table.Column<int>(type: "integer", nullable: false),
-                    X = table.Column<decimal>(type: "numeric(12,9)", nullable: false),
-                    Y = table.Column<decimal>(type: "numeric(12,9)", nullable: false),
-                    PointOrder = table.Column<int>(type: "integer", nullable: false),
-                    created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_wall_points", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_wall_points_walls_WallId",
-                        column: x => x.WallId,
-                        principalTable: "walls",
-                        principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                 });
 
@@ -486,14 +377,14 @@ namespace ai_indoor_nav_api.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
-                name: "idx_floor_location",
-                table: "beacons",
-                columns: new[] { "floor_id", "x", "y" });
-
-            migrationBuilder.CreateIndex(
                 name: "IX_beacons_beacon_type_id",
                 table: "beacons",
                 column: "beacon_type_id");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_beacons_floor_id",
+                table: "beacons",
+                column: "floor_id");
 
             migrationBuilder.CreateIndex(
                 name: "IX_floors_building_id_floor_number",
@@ -518,47 +409,15 @@ namespace ai_indoor_nav_api.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
-                name: "idx_poi_order",
-                table: "poi_points",
-                columns: new[] { "PoiId", "PointOrder" },
-                unique: true);
-
-            migrationBuilder.CreateIndex(
-                name: "idx_floor_from_node",
-                table: "route_edges",
-                columns: new[] { "floor_id", "from_node_id" });
-
-            migrationBuilder.CreateIndex(
-                name: "idx_floor_to_node",
-                table: "route_edges",
-                columns: new[] { "floor_id", "to_node_id" });
-
-            migrationBuilder.CreateIndex(
-                name: "IX_route_edges_from_node_id_to_node_id",
-                table: "route_edges",
-                columns: new[] { "from_node_id", "to_node_id" },
-                unique: true);
-
-            migrationBuilder.CreateIndex(
-                name: "IX_route_edges_to_node_id",
-                table: "route_edges",
-                column: "to_node_id");
-
-            migrationBuilder.CreateIndex(
-                name: "idx_floor_coordinates",
+                name: "IX_route_nodes_FloorId",
                 table: "route_nodes",
-                columns: new[] { "FloorId", "X", "Y" });
-
-            migrationBuilder.CreateIndex(
-                name: "idx_wall_order",
-                table: "wall_points",
-                columns: new[] { "WallId", "PointOrder" },
-                unique: true);
-
-            migrationBuilder.CreateIndex(
-                name: "IX_walls_FloorId",
-                table: "walls",
                 column: "FloorId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_route_nodes_Location",
+                table: "route_nodes",
+                column: "Location")
+                .Annotation("Npgsql:IndexMethod", "GIST");
         }
 
         /// <inheritdoc />
@@ -583,13 +442,10 @@ namespace ai_indoor_nav_api.Migrations
                 name: "beacons");
 
             migrationBuilder.DropTable(
-                name: "poi_points");
+                name: "poi");
 
             migrationBuilder.DropTable(
-                name: "route_edges");
-
-            migrationBuilder.DropTable(
-                name: "wall_points");
+                name: "route_nodes");
 
             migrationBuilder.DropTable(
                 name: "AspNetRoles");
@@ -599,15 +455,6 @@ namespace ai_indoor_nav_api.Migrations
 
             migrationBuilder.DropTable(
                 name: "beacon_types");
-
-            migrationBuilder.DropTable(
-                name: "poi");
-
-            migrationBuilder.DropTable(
-                name: "route_nodes");
-
-            migrationBuilder.DropTable(
-                name: "walls");
 
             migrationBuilder.DropTable(
                 name: "poi_categories");
