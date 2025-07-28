@@ -16,12 +16,25 @@ namespace ai_indoor_nav_api.Controllers
     [ApiController]
     public class RouteNodeController(MyDbContext context) : ControllerBase
     {
-        // GET: api/RouteNode
+        // GET: api/RouteNode?floor=1&building=3
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<RouteNode>>> GetRouteNodes()
+        public async Task<ActionResult<IEnumerable<RouteNode>>> GetRouteNodes([FromQuery] int? floor, [FromQuery] int? building)
         {
-            return await context.RouteNodes.ToListAsync();
+            var query = context.RouteNodes.AsQueryable();
+
+            if (floor.HasValue)
+            {
+                query = query.Where(rn => rn.FloorId == floor.Value);
+            }
+
+            if (building.HasValue)
+            {
+                query = query.Where(rn => rn.Floor!.BuildingId == building.Value);
+            }
+
+            return await query.ToListAsync();
         }
+
 
         // GET: api/RouteNode/5
         [HttpGet("{id}")]
