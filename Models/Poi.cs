@@ -59,7 +59,7 @@ namespace ai_indoor_nav_api.Models
         public DateTime UpdatedAt { get; set; } = UtcNow;
 
         // Geometry field: Point, Polygon, etc.
-        public Geometry? Geometry { get; set; }
+        public Polygon? Geometry { get; set; }
 
         [ForeignKey("FloorId")]
         [JsonIgnore]

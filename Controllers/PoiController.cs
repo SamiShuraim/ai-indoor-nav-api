@@ -1,8 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ai_indoor_nav_api.Data;
@@ -58,8 +53,7 @@ namespace ai_indoor_nav_api.Controllers
 
             return Ok(features);
         }
-
-
+        
         // GET: api/Poi/5
         [HttpGet("{id}")]
         public async Task<IActionResult> GetPoi(int id)
@@ -133,10 +127,10 @@ namespace ai_indoor_nav_api.Controllers
                 geometry = input.Geometry
             });
 
-            Geometry geometry;
+            Polygon polygon;
             try
             {
-                geometry = reader.Read<Geometry>(geoJson);
+                polygon = reader.Read<Polygon>(geoJson);
             }
             catch (Exception ex)
             {
@@ -155,7 +149,7 @@ namespace ai_indoor_nav_api.Controllers
                 PoiType = parsedType,
                 Color = input.Properties.Color,
                 IsVisible = input.Properties.IsVisible,
-                Geometry = geometry,
+                Geometry = polygon,
                 CreatedAt = UtcNow,
                 UpdatedAt = UtcNow
             };

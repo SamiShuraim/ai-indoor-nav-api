@@ -1,11 +1,13 @@
 using System.Text;
 using System.Text.Json.Serialization;
+using ai_indoor_nav_api;
 using ai_indoor_nav_api.Data;
 using dotenv.net;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using NetTopologySuite.IO.Converters;
 
 // Load .env file
 DotEnvOptions options = new DotEnvOptions(probeLevelsToSearch: 6);
@@ -16,13 +18,16 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddEnvironmentVariables();
 
 // Add services to the container.
-builder.Services.AddControllers()
-    .AddJsonOptions(options =>
+builder.Services.AddControllers(options =>
     {
-        options.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
-        options.JsonSerializerOptions.WriteIndented = true;
-        options.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
+        options.InputFormatters.Insert(0, new GeoJsonInputFormatter());
+    })
+    .AddNewtonsoftJson(opts =>
+    {
+        opts.SerializerSettings.Converters.Add(new NetTopologySuite.IO.Converters.GeometryConverter());
+        opts.SerializerSettings.NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore;
     });
+
 
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
