@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json;
 using Newtonsoft.Json;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.Features;
@@ -77,5 +78,43 @@ namespace ai_indoor_nav_api.Models
         [ForeignKey("FloorId")] [JsonIgnore] public Floor? Floor { get; set; }
 
         [ForeignKey("BeaconTypeId")] public BeaconType? BeaconType { get; set; }
+
+        public static Beacon FromFlattened((JsonElement? geometry, Dictionary<string, object?> Props) flattened)
+        {
+            var beacon = new Beacon(); // default constructor
+
+            if (flattened.geometry is JsonElement geoElement && geoElement.ValueKind != JsonValueKind.Null)
+            {
+                var coords = geoElement.GetProperty("coordinates");
+                if (coords.GetArrayLength() == 2)
+                {
+                    var x = coords[0].GetDouble();
+                    var y = coords[1].GetDouble();
+                    beacon.Geometry = new Point(x, y) { SRID = 4326 }; // ✅ FIXED here
+                }
+            }
+
+            var type = typeof(Beacon);
+            foreach (var (key, value) in flattened.Props)
+            {
+                var prop = type.GetProperties()
+                    .FirstOrDefault(p => string.Equals(p.Name, key, StringComparison.OrdinalIgnoreCase));
+
+                if (prop == null || !prop.CanWrite) continue;
+
+                try
+                {
+                    var targetType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
+                    var converted = Convert.ChangeType(value, targetType);
+                    prop.SetValue(beacon, converted);
+                }
+                catch
+                {
+                    // Optional: log or silently ignore
+                }
+            }
+
+            return beacon;
+        }
     }
 }

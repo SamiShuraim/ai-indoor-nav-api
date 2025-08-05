@@ -104,6 +104,46 @@ public static class GeoJsonExtensions
             }
         }
     }
+    
+    public static (JsonElement? Geometry, Dictionary<string, object?> FlattenedProps) FlattenGeoJson(this JsonElement json)
+    {
+        JsonElement? geometry = null;
+        var flattened = new Dictionary<string, object?>();
+
+        foreach (var prop in json.EnumerateObject())
+        {
+            switch (prop.Name.ToLower())
+            {
+                case "geometry":
+                    geometry = prop.Value;
+                    break;
+
+                case "properties":
+                    if (prop.Value.ValueKind == JsonValueKind.Object)
+                    {
+                        foreach (var innerProp in prop.Value.EnumerateObject())
+                        {
+                            flattened[innerProp.Name] = innerProp.Value.ValueKind switch
+                            {
+                                JsonValueKind.String => innerProp.Value.GetString(),
+                                JsonValueKind.Number => innerProp.Value.TryGetInt64(out var l) ? l : innerProp.Value.GetDouble(),
+                                JsonValueKind.True => true,
+                                JsonValueKind.False => false,
+                                JsonValueKind.Null => null,
+                                _ => innerProp.Value.ToString()
+                            };
+                        }
+                    }
+                    break;
+
+                default:
+                    // ignore "type" or anything else
+                    break;
+            }
+        }
+
+        return (geometry, flattened);
+    }
 
     private static bool IsNullable(Type type) =>
         !type.IsValueType || (Nullable.GetUnderlyingType(type) != null);
