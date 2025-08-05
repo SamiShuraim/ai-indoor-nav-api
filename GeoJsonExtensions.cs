@@ -1,7 +1,7 @@
-﻿using NetTopologySuite.Features;
-using NetTopologySuite.Geometries;
+﻿using NetTopologySuite.Geometries;
 using System.Reflection;
 using System.Text.Json;
+using NetTopologySuite.Features;
 
 public static class GeoJsonExtensions
 {

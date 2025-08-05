@@ -20,11 +20,11 @@ builder.Configuration.AddEnvironmentVariables();
 // Add services to the container.
 builder.Services.AddControllers(options =>
     {
-        options.InputFormatters.Insert(0, new GeoJsonInputFormatter());
     })
     .AddNewtonsoftJson(opts =>
     {
-        opts.SerializerSettings.Converters.Add(new NetTopologySuite.IO.Converters.GeometryConverter());
+        opts.SerializerSettings.Converters.Add(new FeatureJsonConverter());
+        opts.SerializerSettings.Converters.Add(new GeometryConverter());
         opts.SerializerSettings.NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore;
     });
 
