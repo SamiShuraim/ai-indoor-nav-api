@@ -2,6 +2,7 @@
 using System.Reflection;
 using System.Text.Json;
 using NetTopologySuite.Features;
+using Newtonsoft.Json.Linq;
 
 public static class GeoJsonExtensions
 {
@@ -105,37 +106,25 @@ public static class GeoJsonExtensions
         }
     }
     
-    public static (JsonElement? geometry, Dictionary<string, object?> Props) FlattenGeoJson(this JsonElement json)
+    public static (JObject? geometry, Dictionary<string, object?> properties) FlattenGeoJson(this JObject json)
     {
-        // Optional: Check that it's an object
-        if (json.ValueKind != JsonValueKind.Object)
+        if (json == null)
+            throw new ArgumentNullException(nameof(json));
+
+        if (!json.TryGetValue("geometry", out JToken? geometry))
             throw new InvalidOperationException("Expected GeoJSON object at root.");
-        
-        // ❌ Old strict check
-        // if (!json.TryGetProperty("type", out var typeProp) || typeProp.GetString() != "Feature")
-        //     throw new InvalidOperationException("Expected GeoJSON object at root.");
 
-        if (!json.TryGetProperty("geometry", out var geometryEl))
-            throw new InvalidOperationException("Missing 'geometry' in GeoJSON.");
+        if (!json.TryGetValue("properties", out JToken? properties))
+            throw new InvalidOperationException("GeoJSON properties missing.");
 
-        if (!json.TryGetProperty("properties", out var propsEl) || propsEl.ValueKind != JsonValueKind.Object)
-            throw new InvalidOperationException("Missing 'properties' in GeoJSON.");
+        var propsDict = new Dictionary<string, object?>();
 
-        var dict = new Dictionary<string, object?>();
-        foreach (var prop in propsEl.EnumerateObject())
+        foreach (var prop in properties.Children<JProperty>())
         {
-            dict[prop.Name] = prop.Value.ValueKind switch
-            {
-                JsonValueKind.String => prop.Value.GetString(),
-                JsonValueKind.Number => prop.Value.TryGetInt64(out var l) ? l : prop.Value.GetDouble(),
-                JsonValueKind.True => true,
-                JsonValueKind.False => false,
-                JsonValueKind.Null => null,
-                _ => prop.Value.GetRawText()
-            };
+            propsDict[prop.Name] = prop.Value.Type == JTokenType.Null ? null : prop.Value.ToObject<object>();
         }
 
-        return (geometryEl, dict);
+        return ((JObject)geometry, propsDict);
     }
     
     private static bool IsNullable(Type type) =>

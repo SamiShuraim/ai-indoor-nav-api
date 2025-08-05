@@ -6,6 +6,9 @@ using ai_indoor_nav_api.Models;
 using NetTopologySuite.Features;
 using NetTopologySuite.IO;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+using JsonException = Newtonsoft.Json.JsonException;
+using JsonSerializer = Newtonsoft.Json.JsonSerializer;
 
 namespace ai_indoor_nav_api.Controllers
 {
@@ -145,17 +148,38 @@ namespace ai_indoor_nav_api.Controllers
 
         // POST: api/Beacon
         [HttpPost]
-        public async Task<ActionResult<Feature>> PostBeacon([FromBody] JsonElement jsonElement)
+        public async Task<ActionResult<Feature>> PostBeacon()
         {
-            
-            Console.WriteLine(jsonElement.GetRawText());
-            Console.WriteLine(jsonElement.GetType());
-            var beacon = Beacon.FromFlattened(jsonElement.FlattenGeoJson());
+            using var reader = new StreamReader(Request.Body);
+            var body = await reader.ReadToEndAsync();
+
+            Console.WriteLine("Raw request body:");
+            Console.WriteLine(body);
+
+            if (string.IsNullOrWhiteSpace(body))
+            {
+                return BadRequest("Request body is empty");
+            }
+
+            JObject jsonObject;
+            try
+            {
+                jsonObject = JObject.Parse(body);
+            }
+            catch (JsonReaderException ex)
+            {
+                Console.WriteLine("JSON deserialization error: " + ex.Message);
+                return BadRequest("Invalid JSON format");
+            }
+
+            var flattened = jsonObject.FlattenGeoJson(); // you will need to update this method to accept JObject
+            var beacon = Beacon.FromFlattened(flattened);
             context.Beacons.Add(beacon);
             await context.SaveChangesAsync();
 
             return CreatedAtAction("GetBeacon", new { id = beacon.Id }, beacon.ToGeoJsonFeature());
         }
+
 
         // DELETE: api/Beacon/5
         [HttpDelete("{id}")]

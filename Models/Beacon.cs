@@ -4,6 +4,7 @@ using System.Text.Json;
 using Newtonsoft.Json;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.Features;
+using Newtonsoft.Json.Linq;
 
 namespace ai_indoor_nav_api.Models
 {
@@ -79,18 +80,19 @@ namespace ai_indoor_nav_api.Models
 
         [ForeignKey("BeaconTypeId")] public BeaconType? BeaconType { get; set; }
 
-        public static Beacon FromFlattened((JsonElement? geometry, Dictionary<string, object?> Props) flattened)
+        public static Beacon FromFlattened((JObject? geometry, Dictionary<string, object?> Props) flattened)
         {
-            var beacon = new Beacon(); // default constructor
+            var beacon = new Beacon();
 
-            if (flattened.geometry is JsonElement geoElement && geoElement.ValueKind != JsonValueKind.Null)
+            // Handle geometry - assuming your Point constructor accepts coordinates like this
+            if (flattened.geometry != null)
             {
-                var coords = geoElement.GetProperty("coordinates");
-                if (coords.GetArrayLength() == 2)
+                var coords = flattened.geometry["coordinates"] as JArray;
+                if (coords != null && coords.Count == 2)
                 {
-                    var x = coords[0].GetDouble();
-                    var y = coords[1].GetDouble();
-                    beacon.Geometry = new Point(x, y) { SRID = 4326 }; // ✅ FIXED here
+                    var x = coords[0].ToObject<double>();
+                    var y = coords[1].ToObject<double>();
+                    beacon.Geometry = new Point(x, y) { SRID = 4326 }; // Use appropriate SRID for GeoJSON
                 }
             }
 
@@ -104,13 +106,20 @@ namespace ai_indoor_nav_api.Models
 
                 try
                 {
-                    var targetType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
-                    var converted = Convert.ChangeType(value, targetType);
-                    prop.SetValue(beacon, converted);
+                    if (value == null)
+                    {
+                        prop.SetValue(beacon, null);
+                    }
+                    else
+                    {
+                        var targetType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
+                        var converted = Convert.ChangeType(value, targetType);
+                        prop.SetValue(beacon, converted);
+                    }
                 }
                 catch
                 {
-                    // Optional: log or silently ignore
+                    // Optional: log or ignore conversion errors
                 }
             }
 
