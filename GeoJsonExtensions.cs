@@ -139,6 +139,7 @@ public static class GeoJsonExtensions
         return (geometry, props);
     }
 
+
     private static bool IsNullable(Type type) =>
         !type.IsValueType || (Nullable.GetUnderlyingType(type) != null);
 
