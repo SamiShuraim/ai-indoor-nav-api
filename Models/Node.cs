@@ -18,7 +18,7 @@ namespace ai_indoor_nav_api.Models
         [Column("connected_node_ids", TypeName = "integer[]")]
         public List<int> ConnectedNodeIds { get; set; } = new();  // Your edges
 
-        public Point? Location { get; set; }  // Now GeoJSON-compatible
+        public Point? Geometry { get; set; }  // Now GeoJSON-compatible
 
         public bool IsVisible { get; set; } = true;
 

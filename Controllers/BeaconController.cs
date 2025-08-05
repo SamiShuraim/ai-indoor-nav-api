@@ -145,8 +145,9 @@ namespace ai_indoor_nav_api.Controllers
 
         // POST: api/Beacon
         [HttpPost]
-        public async Task<ActionResult<Feature>> PostBeacon(Beacon beacon)
+        public async Task<ActionResult<Feature>> PostBeacon(JsonElement jsonElement)
         {
+            var beacon = new Beacon(jsonElement.FlattenGeoJson());
             context.Beacons.Add(beacon);
             await context.SaveChangesAsync();
 

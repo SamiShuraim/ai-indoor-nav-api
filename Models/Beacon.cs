@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json;
 using Newtonsoft.Json;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.Features;
@@ -77,5 +78,51 @@ namespace ai_indoor_nav_api.Models
         [ForeignKey("FloorId")] [JsonIgnore] public Floor? Floor { get; set; }
 
         [ForeignKey("BeaconTypeId")] public BeaconType? BeaconType { get; set; }
+
+        public Beacon((JsonElement? geometry, Dictionary<string, object?> Props) flattened)
+        {
+            // Parse geometry if it's not null
+            if (flattened.geometry is { } geoElement && geoElement.ValueKind != JsonValueKind.Null)
+            {
+                var coords = geoElement.GetProperty("coordinates");
+                if (coords.GetArrayLength() == 2)
+                {
+                    var x = coords[0].GetDouble();
+                    var y = coords[1].GetDouble();
+                    Geometry = new Point(x, y) { SRID = 4326 }; // Ensure correct SRID for GeoJSON
+                }
+            }
+
+            CreatedAt = DateTime.UtcNow;
+            UpdatedAt = DateTime.UtcNow;
+
+            var type = typeof(Beacon);
+            foreach (var (key, value) in flattened.Props)
+            {
+                var prop = type
+                    .GetProperties()
+                    .FirstOrDefault(p => string.Equals(p.Name, key, StringComparison.OrdinalIgnoreCase));
+
+                if (prop == null || !prop.CanWrite) continue;
+
+                try
+                {
+                    if (value == null)
+                    {
+                        prop.SetValue(this, null);
+                    }
+                    else
+                    {
+                        var targetType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
+                        var convertedValue = Convert.ChangeType(value, targetType);
+                        prop.SetValue(this, convertedValue);
+                    }
+                }
+                catch
+                {
+                    // Optional: Log conversion error for debugging
+                }
+            }
+        }
     }
 }

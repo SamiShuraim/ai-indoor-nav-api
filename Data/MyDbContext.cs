@@ -20,7 +20,7 @@ namespace ai_indoor_nav_api.Data
                 .HasConversion<string>();
             
             builder.Entity<RouteNode>()
-                .HasIndex(r => r.Location)
+                .HasIndex(r => r.Geometry)
                 .HasMethod("GIST");
 
             // POI configuration
