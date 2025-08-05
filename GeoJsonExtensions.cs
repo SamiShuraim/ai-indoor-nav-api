@@ -107,11 +107,9 @@ public static class GeoJsonExtensions
     
     public static (JsonElement? geometry, Dictionary<string, object?> Props) FlattenGeoJson(this JsonElement json)
     {
-        // // Optional: Check that it's an object
-        // if (json.ValueKind != JsonValueKind.Object)
-        //     throw new InvalidOperationException("Expected GeoJSON object at root.");
-        Console.WriteLine(json.ValueKind);
-        Console.WriteLine(json);
+        // Optional: Check that it's an object
+        if (json.ValueKind != JsonValueKind.Object)
+            throw new InvalidOperationException("Expected GeoJSON object at root.");
         
         // ❌ Old strict check
         // if (!json.TryGetProperty("type", out var typeProp) || typeProp.GetString() != "Feature")
@@ -139,8 +137,7 @@ public static class GeoJsonExtensions
 
         return (geometryEl, dict);
     }
-
-
+    
     private static bool IsNullable(Type type) =>
         !type.IsValueType || (Nullable.GetUnderlyingType(type) != null);
 
