@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ai_indoor_nav_api.Data;
 using ai_indoor_nav_api.Models;
+using NetTopologySuite.Features;
 using NetTopologySuite.IO;
 using Newtonsoft.Json;
 
@@ -14,7 +15,7 @@ namespace ai_indoor_nav_api.Controllers
     {
         // GET: api/Beacon
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<object>>> GetBeacons([FromQuery] int? floor, [FromQuery] int? building)
+        public async Task<ActionResult<FeatureCollection>> GetBeacons([FromQuery] int? floor, [FromQuery] int? building)
         {
             var query = context.Beacons
                 .Include(b => b.BeaconType)
@@ -28,38 +29,13 @@ namespace ai_indoor_nav_api.Controllers
                 query = query.Where(b => b.Floor != null && b.Floor.BuildingId == building.Value);
 
             var beacons = await query.ToListAsync();
-            var writer = new GeoJsonWriter();
 
-            var features = beacons.Select(beacon => new
-            {
-                type = "Feature",
-                geometry = JsonConvert.DeserializeObject(writer.Write(beacon.Geometry)),
-                properties = new
-                {
-                    beacon.Id,
-                    beacon.Name,
-                    beacon.FloorId,
-                    beacon.BeaconTypeId,
-                    beacon.Uuid,
-                    beacon.MajorId,
-                    beacon.MinorId,
-                    beacon.IsActive,
-                    beacon.IsVisible,
-                    beacon.BatteryLevel,
-                    beacon.LastSeen,
-                    beacon.InstallationDate,
-                    beacon.CreatedAt,
-                    beacon.UpdatedAt,
-                    BeaconTypeName = beacon.BeaconType?.Name // renamed to avoid duplicate
-                }
-            });
-
-            return Ok(features.ToList()); // use ToList() not ToListAsync()
+            return Ok(beacons.ToGeoJsonFeatureCollection()); // use ToList() not ToListAsync()
         }
 
         // GET: api/Beacon/5
         [HttpGet("{id}")]
-        public async Task<ActionResult<Beacon>> GetBeacon(int id)
+        public async Task<ActionResult<Feature>> GetBeacon(int id)
         {
             var beacon = await context.Beacons
                 .Include(b => b.BeaconType)
@@ -70,17 +46,18 @@ namespace ai_indoor_nav_api.Controllers
                 return NotFound();
             }
 
-            return beacon;
+            return Ok(beacon.ToGeoJsonFeature());
         }
 
         // GET: api/Beacon/floor/5
         [HttpGet("floor/{floorId}")]
-        public async Task<ActionResult<IEnumerable<Beacon>>> GetBeaconsByFloorId(int floorId)
+        public async Task<ActionResult<FeatureCollection>> GetBeaconsByFloorId(int floorId)
         {
-            return await context.Beacons
+            var query = await context.Beacons
                 .Where(b => b.FloorId == floorId)
-                .Include(b => b.BeaconType)
-                .ToListAsync();
+                .Include(b => b.BeaconType).ToListAsync();
+            
+            return Ok(query.ToGeoJsonFeatureCollection());
         }
 
         // GET: api/Beacon/uuid/{uuid}
@@ -121,74 +98,7 @@ namespace ai_indoor_nav_api.Controllers
             if (existingBeacon == null)
                 return NotFound();
 
-            foreach (var prop in jsonBeacon.EnumerateObject())
-            {
-                switch (prop.Name.ToLower())
-                {
-                    case "floorid":
-                        if (prop.Value.TryGetInt32(out var floorId))
-                            existingBeacon.FloorId = floorId;
-                        break;
-
-                    case "beacontypeid":
-                        if (prop.Value.ValueKind != JsonValueKind.Null && prop.Value.TryGetInt32(out var beaconTypeId))
-                            existingBeacon.BeaconTypeId = beaconTypeId;
-                        else
-                            existingBeacon.BeaconTypeId = null;
-                        break;
-
-                    case "name":
-                        existingBeacon.Name = prop.Value.GetString() ?? "";
-                        break;
-
-                    case "uuid":
-                        existingBeacon.Uuid = prop.Value.ValueKind == JsonValueKind.Null ? null : prop.Value.GetString();
-                        break;
-
-                    case "majorid":
-                        if (prop.Value.ValueKind != JsonValueKind.Null && prop.Value.TryGetInt32(out var majorId))
-                            existingBeacon.MajorId = majorId;
-                        else
-                            existingBeacon.MajorId = null;
-                        break;
-
-                    case "minorid":
-                        if (prop.Value.ValueKind != JsonValueKind.Null && prop.Value.TryGetInt32(out var minorId))
-                            existingBeacon.MinorId = minorId;
-                        else
-                            existingBeacon.MinorId = null;
-                        break;
-
-                    case "isactive":
-                        if (prop.Value.ValueKind == JsonValueKind.True || prop.Value.ValueKind == JsonValueKind.False)
-                            existingBeacon.IsActive = prop.Value.GetBoolean();
-                        break;
-
-                    case "isvisible":
-                        if (prop.Value.ValueKind == JsonValueKind.True || prop.Value.ValueKind == JsonValueKind.False)
-                            existingBeacon.IsVisible = prop.Value.GetBoolean();
-                        break;
-
-                    case "batterylevel":
-                        if (prop.Value.TryGetInt32(out var batteryLevel))
-                            existingBeacon.BatteryLevel = batteryLevel;
-                        break;
-
-                    case "lastseen":
-                        if (prop.Value.ValueKind != JsonValueKind.Null && prop.Value.TryGetDateTime(out var lastSeen))
-                            existingBeacon.LastSeen = lastSeen;
-                        else
-                            existingBeacon.LastSeen = null;
-                        break;
-
-                    case "installationdate":
-                        if (prop.Value.ValueKind != JsonValueKind.Null && prop.Value.TryGetDateTime(out var installDate))
-                            existingBeacon.InstallationDate = installDate;
-                        else
-                            existingBeacon.InstallationDate = null;
-                        break;
-                }
-            }
+            existingBeacon.PopulateFromJson(jsonBeacon);
 
             existingBeacon.UpdatedAt = DateTime.UtcNow;
 
@@ -235,16 +145,12 @@ namespace ai_indoor_nav_api.Controllers
 
         // POST: api/Beacon
         [HttpPost]
-        public async Task<ActionResult<Beacon>> PostBeacon(Beacon beacon)
+        public async Task<ActionResult<Feature>> PostBeacon(Beacon beacon)
         {
-            // Set timestamps
-            beacon.CreatedAt = DateTime.UtcNow;
-            beacon.UpdatedAt = DateTime.UtcNow;
-
             context.Beacons.Add(beacon);
             await context.SaveChangesAsync();
 
-            return CreatedAtAction("GetBeacon", new { id = beacon.Id }, beacon);
+            return CreatedAtAction("GetBeacon", new { id = beacon.Id }, beacon.ToGeoJsonFeature());
         }
 
         // DELETE: api/Beacon/5

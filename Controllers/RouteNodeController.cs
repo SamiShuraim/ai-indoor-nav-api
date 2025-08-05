@@ -1,12 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ai_indoor_nav_api.Data;
 using ai_indoor_nav_api.Models;
+using NetTopologySuite.Features;
 using NetTopologySuite.Geometries;
 using static System.DateTime;
 
@@ -18,7 +20,7 @@ namespace ai_indoor_nav_api.Controllers
     {
         // GET: api/RouteNode?floor=1&building=3
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<RouteNode>>> GetRouteNodes([FromQuery] int? floor, [FromQuery] int? building)
+        public async Task<ActionResult<FeatureCollection>> GetRouteNodes([FromQuery] int? floor, [FromQuery] int? building)
         {
             var query = context.RouteNodes.AsQueryable();
 
@@ -32,13 +34,13 @@ namespace ai_indoor_nav_api.Controllers
                 query = query.Where(rn => rn.Floor!.BuildingId == building.Value);
             }
 
-            return await query.ToListAsync();
+            return Ok(query.ToGeoJsonFeatureCollection());
         }
 
 
         // GET: api/RouteNode/5
         [HttpGet("{id}")]
-        public async Task<ActionResult<RouteNode>> GetRouteNode(int id)
+        public async Task<ActionResult<Feature>> GetRouteNode(int id)
         {
             var routeNode = await context.RouteNodes.FindAsync(id);
 
@@ -47,21 +49,17 @@ namespace ai_indoor_nav_api.Controllers
                 return NotFound();
             }
 
-            return routeNode;
+            return Ok(routeNode.ToGeoJsonFeature());
         }
 
         // PUT: api/RouteNode/5
         [HttpPut("{id}")]
-        public async Task<IActionResult> UpdateRouteNode(int id, RouteNodeDto dto)
+        public async Task<IActionResult> UpdateRouteNode(int id, JsonElement jsonElement)
         {
             var node = await context.RouteNodes.FindAsync(id);
             if (node == null) return NotFound();
 
-            node.FloorId = dto.FloorId;
-            node.Location = new Point(dto.Longitude, dto.Latitude) { SRID = 4326 };
-            node.IsVisible = dto.IsVisible;
-            node.ConnectedNodeIds = dto.ConnectedNodeIds;
-            node.UpdatedAt = UtcNow;
+            node.PopulateFromJson(jsonElement);
 
             await context.SaveChangesAsync();
             return NoContent();
@@ -69,22 +67,12 @@ namespace ai_indoor_nav_api.Controllers
 
         // POST: api/RouteNode
         [HttpPost]
-        public async Task<ActionResult<RouteNode>> CreateRouteNode(RouteNodeDto dto)
+        public async Task<ActionResult<RouteNode>> CreateRouteNode(RouteNode node)
         {
-            var node = new RouteNode
-            {
-                FloorId = dto.FloorId,
-                Location = new Point(dto.Longitude, dto.Latitude) { SRID = 4326 },
-                IsVisible = dto.IsVisible,
-                ConnectedNodeIds = dto.ConnectedNodeIds,
-                CreatedAt = UtcNow,
-                UpdatedAt = UtcNow
-            };
-
             context.RouteNodes.Add(node);
             await context.SaveChangesAsync();
 
-            return CreatedAtAction(nameof(GetRouteNode), new { id = node.Id }, node);
+            return CreatedAtAction(nameof(GetRouteNode), new { id = node.Id }, node.ToGeoJsonFeature());
         }
 
         // DELETE: api/RouteNode/5

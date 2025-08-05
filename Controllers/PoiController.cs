@@ -1,8 +1,10 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ai_indoor_nav_api.Data;
 using ai_indoor_nav_api.Enums;
 using ai_indoor_nav_api.Models;
+using NetTopologySuite.Features;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 using Newtonsoft.Json;
@@ -15,7 +17,7 @@ namespace ai_indoor_nav_api.Controllers
     public class PoiController(MyDbContext context) : ControllerBase
     {
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<object>>> GetPois([FromQuery] int? floor, [FromQuery] int? building)
+        public async Task<ActionResult<FeatureCollection>> GetPois([FromQuery] int? floor, [FromQuery] int? building)
         {
             var query = context.Pois.Include(p => p.Floor).AsQueryable();
 
@@ -30,28 +32,8 @@ namespace ai_indoor_nav_api.Controllers
             }
 
             var pois = await query.ToListAsync();
-            var writer = new GeoJsonWriter();
-
-            var features = pois.Select(poi => new
-            {
-                type = "Feature",
-                geometry = JsonConvert.DeserializeObject(writer.Write(poi.Geometry)),
-                properties = new
-                {
-                    poi.Id,
-                    poi.Name,
-                    poi.FloorId,
-                    poi.CategoryId,
-                    poi.Description,
-                    poi.PoiType,
-                    poi.Color,
-                    poi.IsVisible,
-                    poi.CreatedAt,
-                    poi.UpdatedAt
-                }
-            });
-
-            return Ok(features);
+           
+            return Ok(pois.ToGeoJsonFeatureCollection());
         }
         
         // GET: api/Poi/5
@@ -61,103 +43,34 @@ namespace ai_indoor_nav_api.Controllers
             var poi = await context.Pois.FindAsync(id);
             if (poi == null) return NotFound();
 
-            var writer = new GeoJsonWriter();
-            var geometryJson = writer.Write(poi.Geometry);
-
-            var feature = new
-            {
-                type = "Feature",
-                geometry = JsonConvert.DeserializeObject(geometryJson),
-                properties = new
-                {
-                    poi.Name,
-                    poi.FloorId,
-                    poi.CategoryId,
-                    poi.Description,
-                    poi.PoiType,
-                    poi.Color,
-                    poi.IsVisible
-                }
-            };
-
-            return Ok(feature);
+            return Ok(poi.ToGeoJsonFeature());
         }
 
         // PUT: api/Poi/5
         // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutPoi(int id, Poi poi)
+        public async Task<IActionResult> PutPoi(int id, JsonElement jsonBeacon)
         {
-            if (id != poi.Id)
-            {
-                return BadRequest();
-            }
+            var existingPoi = await context.Pois.FindAsync(id);
+            if (existingPoi == null)
+                return NotFound();
 
-            context.Entry(poi).State = EntityState.Modified;
+            existingPoi.PopulateFromJson(jsonBeacon);
 
-            try
-            {
-                await context.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!PoiExists(id))
-                {
-                    return NotFound();
-                }
-                else
-                {
-                    throw;
-                }
-            }
+            existingPoi.UpdatedAt = UtcNow;
 
+            await context.SaveChangesAsync();
             return NoContent();
         }
 
         // POST: api/Poi
         [HttpPost]
-        public async Task<IActionResult> CreatePoi([FromBody] GeoJsonFeatureDto input)
+        public async Task<ActionResult<Feature>> PostPoi(Poi poi)
         {
-            var reader = new GeoJsonReader();
-
-            // Reconstruct full GeoJSON string
-            var geoJson = JsonConvert.SerializeObject(new
-            {
-                type = "Feature",
-                geometry = input.Geometry
-            });
-
-            Polygon polygon;
-            try
-            {
-                polygon = reader.Read<Polygon>(geoJson);
-            }
-            catch (Exception ex)
-            {
-                return BadRequest($"Invalid geometry: {ex.Message}");
-            }
-
-            if (!Enum.TryParse<PoiType>(input.Properties.PoiType, true, out var parsedType))
-                return BadRequest("Invalid PoiType. Allowed values: Room, Stairs, Elevator, Wall.");
-
-            var poi = new Poi
-            {
-                Name = input.Properties.Name,
-                FloorId = input.Properties.FloorId,
-                CategoryId = input.Properties.CategoryId,
-                Description = input.Properties.Description,
-                PoiType = parsedType,
-                Color = input.Properties.Color,
-                IsVisible = input.Properties.IsVisible,
-                Geometry = polygon,
-                CreatedAt = UtcNow,
-                UpdatedAt = UtcNow
-            };
-
             context.Pois.Add(poi);
             await context.SaveChangesAsync();
-
-            return CreatedAtAction(nameof(GetPoi), new { id = poi.Id }, poi);
+            
+            return CreatedAtAction(nameof(GetPoi), new { id = poi.Id }, poi.ToGeoJsonFeature());
         }
 
         // DELETE: api/Poi/5
