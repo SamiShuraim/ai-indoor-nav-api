@@ -105,44 +105,38 @@ public static class GeoJsonExtensions
         }
     }
     
-    public static (JsonElement? Geometry, Dictionary<string, object?> FlattenedProps) FlattenGeoJson(this JsonElement json)
+    public static (JsonElement? geometry, Dictionary<string, object?> Props) FlattenGeoJson(this JsonElement json)
     {
         JsonElement? geometry = null;
-        var flattened = new Dictionary<string, object?>();
+        var props = new Dictionary<string, object?>();
 
-        foreach (var prop in json.EnumerateObject())
+        if (json.TryGetProperty("geometry", out var geo))
+            geometry = geo;
+
+        if (json.TryGetProperty("properties", out var propertiesElement))
         {
-            switch (prop.Name.ToLower())
+            if (propertiesElement.ValueKind == JsonValueKind.Object)
             {
-                case "geometry":
-                    geometry = prop.Value;
-                    break;
-
-                case "properties":
-                    if (prop.Value.ValueKind == JsonValueKind.Object)
+                foreach (var prop in propertiesElement.EnumerateObject())
+                {
+                    props[prop.Name] = prop.Value.ValueKind switch
                     {
-                        foreach (var innerProp in prop.Value.EnumerateObject())
-                        {
-                            flattened[innerProp.Name] = innerProp.Value.ValueKind switch
-                            {
-                                JsonValueKind.String => innerProp.Value.GetString(),
-                                JsonValueKind.Number => innerProp.Value.TryGetInt64(out var l) ? l : innerProp.Value.GetDouble(),
-                                JsonValueKind.True => true,
-                                JsonValueKind.False => false,
-                                JsonValueKind.Null => null,
-                                _ => innerProp.Value.ToString()
-                            };
-                        }
-                    }
-                    break;
-
-                default:
-                    // ignore "type" or anything else
-                    break;
+                        JsonValueKind.String => prop.Value.GetString(),
+                        JsonValueKind.Number => prop.Value.TryGetInt64(out var l) ? l : prop.Value.GetDouble(),
+                        JsonValueKind.True => true,
+                        JsonValueKind.False => false,
+                        JsonValueKind.Null => null,
+                        _ => prop.Value.GetRawText()
+                    };
+                }
+            }
+            else
+            {
+                throw new InvalidOperationException("'properties' must be a JSON object.");
             }
         }
 
-        return (geometry, flattened);
+        return (geometry, props);
     }
 
     private static bool IsNullable(Type type) =>
