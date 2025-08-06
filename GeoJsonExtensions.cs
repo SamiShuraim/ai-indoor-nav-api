@@ -141,4 +141,54 @@ public static class GeoJsonExtensions
             System.Text.RegularExpressions.RegexOptions.Compiled
         ).ToLower();
     }
+        public static T FromFlattened<T>(this (JObject? geometry, Dictionary<string, object?> Props) flattened) where T : new()
+        {
+            var instance = new T();
+
+            // Handle geometry if T has a 'Geometry' property
+            var geometryProp = typeof(T).GetProperty("Geometry");
+            if (flattened.geometry != null && geometryProp != null && geometryProp.CanWrite)
+            {
+                var coords = flattened.geometry["coordinates"] as JArray;
+                if (coords != null && coords.Count == 2)
+                {
+                    var x = coords[0].ToObject<double>();
+                    var y = coords[1].ToObject<double>();
+
+                    var point = new NetTopologySuite.Geometries.Point(x, y) { SRID = 4326 };
+                    if (geometryProp.PropertyType == typeof(NetTopologySuite.Geometries.Point))
+                    {
+                        geometryProp.SetValue(instance, point);
+                    }
+                }
+            }
+
+            foreach (var (key, value) in flattened.Props)
+            {
+                var prop = typeof(T).GetProperties()
+                    .FirstOrDefault(p => string.Equals(p.Name, key, StringComparison.OrdinalIgnoreCase));
+
+                if (prop == null || !prop.CanWrite) continue;
+
+                try
+                {
+                    if (value == null)
+                    {
+                        prop.SetValue(instance, null);
+                    }
+                    else
+                    {
+                        var targetType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
+                        var converted = Convert.ChangeType(value, targetType);
+                        prop.SetValue(instance, converted);
+                    }
+                }
+                catch
+                {
+                    // Optional: log or skip conversion errors
+                }
+            }
+
+            return instance;
+        }
 }

@@ -79,51 +79,5 @@ namespace ai_indoor_nav_api.Models
         [ForeignKey("FloorId")] [JsonIgnore] public Floor? Floor { get; set; }
 
         [ForeignKey("BeaconTypeId")] public BeaconType? BeaconType { get; set; }
-
-        public static Beacon FromFlattened((JObject? geometry, Dictionary<string, object?> Props) flattened)
-        {
-            var beacon = new Beacon();
-
-            // Handle geometry - assuming your Point constructor accepts coordinates like this
-            if (flattened.geometry != null)
-            {
-                var coords = flattened.geometry["coordinates"] as JArray;
-                if (coords != null && coords.Count == 2)
-                {
-                    var x = coords[0].ToObject<double>();
-                    var y = coords[1].ToObject<double>();
-                    beacon.Geometry = new Point(x, y) { SRID = 4326 }; // Use appropriate SRID for GeoJSON
-                }
-            }
-
-            var type = typeof(Beacon);
-            foreach (var (key, value) in flattened.Props)
-            {
-                var prop = type.GetProperties()
-                    .FirstOrDefault(p => string.Equals(p.Name, key, StringComparison.OrdinalIgnoreCase));
-
-                if (prop == null || !prop.CanWrite) continue;
-
-                try
-                {
-                    if (value == null)
-                    {
-                        prop.SetValue(beacon, null);
-                    }
-                    else
-                    {
-                        var targetType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
-                        var converted = Convert.ChangeType(value, targetType);
-                        prop.SetValue(beacon, converted);
-                    }
-                }
-                catch
-                {
-                    // Optional: log or ignore conversion errors
-                }
-            }
-
-            return beacon;
-        }
     }
 }

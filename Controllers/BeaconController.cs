@@ -150,34 +150,18 @@ namespace ai_indoor_nav_api.Controllers
         [HttpPost]
         public async Task<ActionResult<Feature>> PostBeacon()
         {
-            using var reader = new StreamReader(Request.Body);
-            var body = await reader.ReadToEndAsync();
+            var (success, errorMessage, beacon) = await RequestParser.TryParseFlattenedEntity<Beacon>(Request);
 
-            Console.WriteLine("Raw request body:");
-            Console.WriteLine(body);
+            if (!success)
+                return BadRequest(errorMessage);
+            
+            if (beacon == null)
+                return BadRequest(errorMessage);
 
-            if (string.IsNullOrWhiteSpace(body))
-            {
-                return BadRequest("Request body is empty");
-            }
-
-            JObject jsonObject;
-            try
-            {
-                jsonObject = JObject.Parse(body);
-            }
-            catch (JsonReaderException ex)
-            {
-                Console.WriteLine("JSON deserialization error: " + ex.Message);
-                return BadRequest("Invalid JSON format");
-            }
-
-            var flattened = jsonObject.FlattenGeoJson(); // you will need to update this method to accept JObject
-            var beacon = Beacon.FromFlattened(flattened);
             context.Beacons.Add(beacon);
             await context.SaveChangesAsync();
 
-            return CreatedAtAction("GetBeacon", new { id = beacon.Id }, beacon.ToGeoJsonFeature());
+            return CreatedAtAction(nameof(GetBeacon), new { id = beacon.Id }, beacon.ToGeoJsonFeature());
         }
 
 

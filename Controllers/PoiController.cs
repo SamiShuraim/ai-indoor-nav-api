@@ -65,13 +65,22 @@ namespace ai_indoor_nav_api.Controllers
 
         // POST: api/Poi
         [HttpPost]
-        public async Task<ActionResult<Feature>> PostPoi(Poi poi)
+        public async Task<ActionResult<Feature>> PostPoi()
         {
+            var (success, errorMessage, poi) = await RequestParser.TryParseFlattenedEntity<Poi>(Request);
+
+            if (!success)
+                return BadRequest(errorMessage);
+            
+            if (poi == null)
+                return BadRequest(errorMessage);
+
             context.Pois.Add(poi);
             await context.SaveChangesAsync();
-            
+
             return CreatedAtAction(nameof(GetPoi), new { id = poi.Id }, poi.ToGeoJsonFeature());
         }
+
 
         // DELETE: api/Poi/5
         [HttpDelete("{id}")]
