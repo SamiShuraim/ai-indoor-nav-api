@@ -20,7 +20,7 @@ namespace ai_indoor_nav_api.Controllers
         public async Task<ActionResult<FeatureCollection>> GetPois([FromQuery] int? floor, [FromQuery] int? building)
         {
             var query = context.Pois.Include(p => p.Floor).AsQueryable();
-
+            
             if (floor.HasValue)
             {
                 query = query.Where(p => p.FloorId == floor.Value);

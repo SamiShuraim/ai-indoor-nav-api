@@ -141,54 +141,79 @@ public static class GeoJsonExtensions
             System.Text.RegularExpressions.RegexOptions.Compiled
         ).ToLower();
     }
-        public static T FromFlattened<T>(this (JObject? geometry, Dictionary<string, object?> Props) flattened) where T : new()
+    public static T FromFlattened<T>(this (JObject? geometry, Dictionary<string, object?> Props) flattened) where T : new()
+    {
+        var instance = new T();
+
+        // Handle geometry if T has a 'Geometry' property
+        var geometryProp = typeof(T).GetProperty("Geometry");
+        if (flattened.geometry != null && geometryProp != null && geometryProp.CanWrite)
         {
-            var instance = new T();
+            var geomType = flattened.geometry["type"]?.ToString();
+            var coordsToken = flattened.geometry["coordinates"];
 
-            // Handle geometry if T has a 'Geometry' property
-            var geometryProp = typeof(T).GetProperty("Geometry");
-            if (flattened.geometry != null && geometryProp != null && geometryProp.CanWrite)
+            if (geomType == "Point" && coordsToken is JArray pointCoords && pointCoords.Count == 2)
             {
-                var coords = flattened.geometry["coordinates"] as JArray;
-                if (coords != null && coords.Count == 2)
-                {
-                    var x = coords[0].ToObject<double>();
-                    var y = coords[1].ToObject<double>();
+                var x = pointCoords[0].ToObject<double>();
+                var y = pointCoords[1].ToObject<double>();
 
-                    var point = new NetTopologySuite.Geometries.Point(x, y) { SRID = 4326 };
-                    if (geometryProp.PropertyType == typeof(NetTopologySuite.Geometries.Point))
+                var point = new Point(x, y) { SRID = 4326 };
+                if (geometryProp.PropertyType == typeof(Point))
+                {
+                    geometryProp.SetValue(instance, point);
+                }
+            }
+            else if (geomType == "Polygon" && coordsToken is JArray polygonCoords)
+            {
+                // polygonCoords: [[[x1, y1], [x2, y2], ..., [x1, y1]]]
+                var shell = polygonCoords.First as JArray;
+                if (shell != null)
+                {
+                    var coordinates = shell
+                        .Select(c =>
+                        {
+                            var arr = c as JArray;
+                            return new Coordinate(arr[0].ToObject<double>(), arr[1].ToObject<double>());
+                        })
+                        .ToArray();
+
+                    var linearRing = new LinearRing(coordinates);
+                    var polygon = new Polygon(linearRing) { SRID = 4326 };
+
+                    if (geometryProp.PropertyType == typeof(Polygon))
                     {
-                        geometryProp.SetValue(instance, point);
+                        geometryProp.SetValue(instance, polygon);
                     }
                 }
             }
-
-            foreach (var (key, value) in flattened.Props)
-            {
-                var prop = typeof(T).GetProperties()
-                    .FirstOrDefault(p => string.Equals(p.Name, key, StringComparison.OrdinalIgnoreCase));
-
-                if (prop == null || !prop.CanWrite) continue;
-
-                try
-                {
-                    if (value == null)
-                    {
-                        prop.SetValue(instance, null);
-                    }
-                    else
-                    {
-                        var targetType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
-                        var converted = Convert.ChangeType(value, targetType);
-                        prop.SetValue(instance, converted);
-                    }
-                }
-                catch
-                {
-                    // Optional: log or skip conversion errors
-                }
-            }
-
-            return instance;
         }
+
+        foreach (var (key, value) in flattened.Props)
+        {
+            var prop = typeof(T).GetProperties()
+                .FirstOrDefault(p => string.Equals(p.Name, key, StringComparison.OrdinalIgnoreCase));
+
+            if (prop == null || !prop.CanWrite) continue;
+
+            try
+            {
+                if (value == null)
+                {
+                    prop.SetValue(instance, null);
+                }
+                else
+                {
+                    var targetType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
+                    var converted = Convert.ChangeType(value, targetType);
+                    prop.SetValue(instance, converted);
+                }
+            }
+            catch
+            {
+                // Optional: log or skip conversion errors
+            }
+        }
+
+        return instance;
+    }
 }
