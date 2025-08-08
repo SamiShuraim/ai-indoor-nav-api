@@ -95,19 +95,33 @@ namespace ai_indoor_nav_api.Controllers
         }
 
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutBeacon(int id, JsonElement jsonBeacon)
+        public async Task<IActionResult> PutBeacon(int id)
         {
             var existingBeacon = await context.Beacons.FindAsync(id);
             if (existingBeacon == null)
                 return NotFound();
 
-            existingBeacon.PopulateFromJson(jsonBeacon);
+            var (success, errorMessage, updatedBeacon) =
+                await RequestParser.TryParseFlattenedEntity<Beacon>(Request);
+
+            if (!success || updatedBeacon == null)
+                return BadRequest(errorMessage);
+
+            // Update only the fields you want to allow editing
+            existingBeacon.Name = updatedBeacon.Name;
+            // existingBeacon.FloorId = updatedBeacon.FloorId;
+            existingBeacon.BeaconTypeId = updatedBeacon.BeaconTypeId;
+            existingBeacon.IsActive = updatedBeacon.IsActive;
+            existingBeacon.IsVisible = updatedBeacon.IsVisible;
+            existingBeacon.BatteryLevel = updatedBeacon.BatteryLevel;
+            // existingBeacon.Geometry = updatedBeacon.Geometry; // if you store geometry as a type
 
             existingBeacon.UpdatedAt = DateTime.UtcNow;
 
             await context.SaveChangesAsync();
             return NoContent();
         }
+
 
         // PUT: api/Beacon/5/battery/{level}
         [HttpPut("{id}/battery/{level}")]
