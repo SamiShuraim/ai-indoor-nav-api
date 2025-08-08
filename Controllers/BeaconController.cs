@@ -106,6 +106,8 @@ namespace ai_indoor_nav_api.Controllers
 
             if (!success || updatedBeacon == null)
                 return BadRequest(errorMessage);
+            
+            Console.WriteLine($"Old Name: {existingBeacon.Name}, New Name: {updatedBeacon.Name}");
 
             // Update only the fields you want to allow editing
             existingBeacon.Name = updatedBeacon.Name;
