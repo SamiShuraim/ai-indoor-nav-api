@@ -1,14 +1,8 @@
-using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ai_indoor_nav_api.Data;
 using ai_indoor_nav_api.Models;
 using NetTopologySuite.Features;
-using NetTopologySuite.IO;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
-using JsonException = Newtonsoft.Json.JsonException;
-using JsonSerializer = Newtonsoft.Json.JsonSerializer;
 
 namespace ai_indoor_nav_api.Controllers
 {

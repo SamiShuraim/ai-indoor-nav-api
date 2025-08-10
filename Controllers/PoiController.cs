@@ -49,15 +49,31 @@ namespace ai_indoor_nav_api.Controllers
         // PUT: api/Poi/5
         // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutPoi(int id, JsonElement jsonBeacon)
+        public async Task<IActionResult> PutPoi(int id)
         {
             var existingPoi = await context.Pois.FindAsync(id);
             if (existingPoi == null)
                 return NotFound();
 
-            existingPoi.PopulateFromJson(jsonBeacon);
+            var (success, errorMessage, updatedPoi) =
+                await RequestParser.TryParseFlattenedEntity<Poi>(Request);
 
-            existingPoi.UpdatedAt = UtcNow;
+            if (!success || updatedPoi == null)
+                return BadRequest(errorMessage);
+            
+            Console.WriteLine($"Old Name: {existingPoi.Name}, New Name: {updatedPoi.Name}");
+
+            // Update only the fields you want to allow editing
+            existingPoi.Name = updatedPoi.Name;
+            existingPoi.Category = updatedPoi.Category;
+            existingPoi.PoiType = updatedPoi.PoiType;
+            existingPoi.CategoryId = updatedPoi.CategoryId;
+            existingPoi.Color = updatedPoi.Color;
+            existingPoi.Description = updatedPoi.Description;
+            
+            // existingBeacon.Geometry = updatedBeacon.Geometry; // if you store geometry as a type
+
+            existingPoi.UpdatedAt = DateTime.UtcNow;
 
             await context.SaveChangesAsync();
             return NoContent();
