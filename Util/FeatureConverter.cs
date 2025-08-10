@@ -30,7 +30,7 @@ public class FeatureJsonConverter : JsonConverter<Feature>
         {
             foreach (var name in value.Attributes.GetNames())
             {
-                writer.WritePropertyName(ToCamelCase(name));
+                writer.WritePropertyName(name);
                 serializer.Serialize(writer, value.Attributes[name]);
             }
         }
@@ -45,11 +45,4 @@ public class FeatureJsonConverter : JsonConverter<Feature>
     }
 
     public override bool CanRead => false;
-
-    private string ToCamelCase(string s)
-    {
-        if (string.IsNullOrEmpty(s) || char.IsLower(s[0]))
-            return s;
-        return char.ToLowerInvariant(s[0]) + s.Substring(1);
-    }
 }
