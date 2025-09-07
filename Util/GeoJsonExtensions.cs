@@ -141,6 +141,18 @@ public static class GeoJsonExtensions
             System.Text.RegularExpressions.RegexOptions.Compiled
         ).ToLower();
     }
+    
+    // Convert snake_case to PascalCase
+    public static string ToPascalCase(this string input)
+    {
+        if (string.IsNullOrEmpty(input)) return input;
+        return System.Text.RegularExpressions.Regex.Replace(
+            input,
+            "(?:^|_)([a-z])",
+            match => match.Groups[1].Value.ToUpper(),
+            System.Text.RegularExpressions.RegexOptions.Compiled
+        );
+    }
     public static T FromFlattened<T>(this (JObject? geometry, Dictionary<string, object?> Props) flattened) where T : new()
     {
         var instance = new T();
@@ -191,8 +203,25 @@ public static class GeoJsonExtensions
         foreach (var (key, value) in flattened.Props)
         {
             Console.WriteLine($"Mapping property: {key} = {value}");
+            
+            // Try exact match first
             var prop = typeof(T).GetProperties()
-                .FirstOrDefault(p => string.Equals(p.Name, key, StringComparison.OrdinalIgnoreCase));
+                .FirstOrDefault(p => p.Name == key);
+            
+            // If no exact match, try case-insensitive
+            if (prop == null)
+            {
+                prop = typeof(T).GetProperties()
+                    .FirstOrDefault(p => string.Equals(p.Name, key, StringComparison.OrdinalIgnoreCase));
+            }
+            
+            // If still no match, try snake_case conversion
+            if (prop == null)
+            {
+                var pascalCase = key.ToPascalCase();
+                prop = typeof(T).GetProperties()
+                    .FirstOrDefault(p => p.Name == pascalCase);
+            }
 
             if (prop == null || !prop.CanWrite) 
             {
