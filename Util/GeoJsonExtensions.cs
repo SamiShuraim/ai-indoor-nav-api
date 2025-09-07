@@ -62,47 +62,62 @@ public static class GeoJsonExtensions
         var type = target.GetType();
         var properties = type.GetProperties(BindingFlags.Public | BindingFlags.Instance);
 
-        foreach (var prop in json.EnumerateObject())
+        // Check if the JsonElement is valid and can be enumerated
+        if (json.ValueKind != JsonValueKind.Object)
         {
-            var property = properties.FirstOrDefault(p =>
-                string.Equals(p.Name, prop.Name, StringComparison.OrdinalIgnoreCase) &&
-                p.CanWrite);
+            Console.WriteLine($"Invalid JsonElement ValueKind: {json.ValueKind}");
+            return;
+        }
 
-            if (property == null) continue;
-
-            try
+        try
+        {
+            foreach (var prop in json.EnumerateObject())
             {
-                object? value = null;
+                var property = properties.FirstOrDefault(p =>
+                    string.Equals(p.Name, prop.Name, StringComparison.OrdinalIgnoreCase) &&
+                    p.CanWrite);
 
-                if (prop.Value.ValueKind == JsonValueKind.Null)
+                if (property == null) continue;
+
+                try
                 {
-                    if (IsNullable(property.PropertyType))
-                        property.SetValue(target, null);
-                    continue;
+                    object? value = null;
+
+                    if (prop.Value.ValueKind == JsonValueKind.Null)
+                    {
+                        if (IsNullable(property.PropertyType))
+                            property.SetValue(target, null);
+                        continue;
+                    }
+
+                    var targetType = Nullable.GetUnderlyingType(property.PropertyType) ?? property.PropertyType;
+
+                    value = prop.Value.ValueKind switch
+                    {
+                        JsonValueKind.String when targetType == typeof(Guid) => Guid.Parse(prop.Value.GetString()!),
+                        JsonValueKind.String when targetType == typeof(DateTime) => DateTime.Parse(prop.Value.GetString()!),
+                        JsonValueKind.String => prop.Value.GetString(),
+                        JsonValueKind.Number when targetType == typeof(int) => prop.Value.GetInt32(),
+                        JsonValueKind.Number when targetType == typeof(double) => prop.Value.GetDouble(),
+                        JsonValueKind.Number when targetType == typeof(decimal) => prop.Value.GetDecimal(),
+                        JsonValueKind.Number when targetType == typeof(long) => prop.Value.GetInt64(),
+                        JsonValueKind.True or JsonValueKind.False when targetType == typeof(bool) => prop.Value.GetBoolean(),
+                        _ => JsonSerializer.Deserialize(prop.Value.GetRawText(), targetType)
+                    };
+
+                    if (value != null)
+                        property.SetValue(target, value);
                 }
-
-                var targetType = Nullable.GetUnderlyingType(property.PropertyType) ?? property.PropertyType;
-
-                value = prop.Value.ValueKind switch
+                catch (Exception ex)
                 {
-                    JsonValueKind.String when targetType == typeof(Guid) => Guid.Parse(prop.Value.GetString()!),
-                    JsonValueKind.String when targetType == typeof(DateTime) => DateTime.Parse(prop.Value.GetString()!),
-                    JsonValueKind.String => prop.Value.GetString(),
-                    JsonValueKind.Number when targetType == typeof(int) => prop.Value.GetInt32(),
-                    JsonValueKind.Number when targetType == typeof(double) => prop.Value.GetDouble(),
-                    JsonValueKind.Number when targetType == typeof(decimal) => prop.Value.GetDecimal(),
-                    JsonValueKind.Number when targetType == typeof(long) => prop.Value.GetInt64(),
-                    JsonValueKind.True or JsonValueKind.False when targetType == typeof(bool) => prop.Value.GetBoolean(),
-                    _ => JsonSerializer.Deserialize(prop.Value.GetRawText(), targetType)
-                };
-
-                if (value != null)
-                    property.SetValue(target, value);
+                    Console.WriteLine($"Error setting property {prop.Name}: {ex.Message}");
+                    // Optional: log or silently skip mismatches
+                }
             }
-            catch
-            {
-                // Optional: log or silently skip mismatches
-            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error enumerating JsonElement: {ex.Message}");
         }
     }
     
