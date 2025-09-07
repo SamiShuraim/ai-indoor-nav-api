@@ -1,4 +1,4 @@
-﻿using NetTopologySuite.Geometries;
+using NetTopologySuite.Geometries;
 using System.Reflection;
 using System.Text.Json;
 using NetTopologySuite.Features;
@@ -190,10 +190,16 @@ public static class GeoJsonExtensions
 
         foreach (var (key, value) in flattened.Props)
         {
+            Console.WriteLine($"Mapping property: {key} = {value}");
             var prop = typeof(T).GetProperties()
                 .FirstOrDefault(p => string.Equals(p.Name, key, StringComparison.OrdinalIgnoreCase));
 
-            if (prop == null || !prop.CanWrite) continue;
+            if (prop == null || !prop.CanWrite) 
+            {
+                Console.WriteLine($"Property {key} not found or not writable");
+                continue;
+            }
+            Console.WriteLine($"Found property: {prop.Name}");
 
             try
             {
