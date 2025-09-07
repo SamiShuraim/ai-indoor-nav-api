@@ -222,6 +222,13 @@ public static class GeoJsonExtensions
                 prop = typeof(T).GetProperties()
                     .FirstOrDefault(p => p.Name == pascalCase);
             }
+            
+            // Special case for connections -> ConnectedNodeIds
+            if (prop == null && key == "connections")
+            {
+                prop = typeof(T).GetProperties()
+                    .FirstOrDefault(p => p.Name == "ConnectedNodeIds");
+            }
 
             if (prop == null || !prop.CanWrite) 
             {
