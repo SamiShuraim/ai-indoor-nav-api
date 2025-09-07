@@ -28,6 +28,7 @@ public static class RequestParser
         try
         {
             var flattened = jsonObject.FlattenGeoJson();
+            Console.WriteLine(flattened);
             var entity = flattened.FromFlattened<TEntity>();
             return (true, null, entity);
         }

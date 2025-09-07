@@ -10,16 +10,21 @@ namespace ai_indoor_nav_api.Models
     public class RouteNode
     {
         [Key]
+        [Column("id")]
         public int Id { get; set; }
 
         [Required]
-        public int FloorId { get; set; }
+        [Column("floor_id")]
+        public int FloorId { get; init; }
         
         [Column("connected_node_ids", TypeName = "integer[]")]
         public List<int> ConnectedNodeIds { get; set; } = new();  // Your edges
 
+        [Required]
+        [Column("geometry")]
         public Point? Geometry { get; set; }  // Now GeoJSON-compatible
 
+        [Column("is_visible")]
         public bool IsVisible { get; set; } = true;
 
         [Column("created_at")]

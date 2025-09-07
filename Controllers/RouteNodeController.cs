@@ -67,8 +67,17 @@ namespace ai_indoor_nav_api.Controllers
 
         // POST: api/RouteNode
         [HttpPost]
-        public async Task<ActionResult<RouteNode>> CreateRouteNode(RouteNode node)
+        public async Task<ActionResult<RouteNode>> CreateRouteNode()
         {
+            var (success, errorMessage, node) = 
+                await RequestParser.TryParseFlattenedEntity<RouteNode>(Request);
+
+            if (!success)
+                return BadRequest(errorMessage);
+
+            if (node == null)
+                return BadRequest(errorMessage);
+
             context.RouteNodes.Add(node);
             await context.SaveChangesAsync();
 

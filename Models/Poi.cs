@@ -11,15 +11,19 @@ namespace ai_indoor_nav_api.Models
     public class PoiCategory
     {
         [Key]
+        [Column("id")]
         public int Id { get; init; }
 
         [Required]
         [StringLength(100)]
+        [Column("name")]
         public string Name { get; set; } = "";
 
         [StringLength(7)]
+        [Column("color")]
         public string Color { get; set; } = "#3B82F6"; // Hex color code
 
+        [Column("description")]
         public string? Description { get; set; }
 
         [JsonIgnore]
@@ -30,26 +34,35 @@ namespace ai_indoor_nav_api.Models
     public class Poi
     {
         [Key]
+        [Column("id")]
         public int Id { get; init; }
 
         [Required]
+        [Column("floor_id")]
         public int FloorId { get; init; }
 
+        [Column("category_id")]
         public int? CategoryId { get; set; }
 
         [Required]
         [StringLength(255)]
+        [Column("name")]
         public string Name { get; set; } = "";
 
+        [StringLength(255)]
+        [Column("description")]
         public string? Description { get; set; }
 
         [Required]
         [EnumDataType(typeof(PoiType))]
+        [Column("poi_type")]
         public PoiType PoiType { get; set; } = PoiType.Room;
 
         [StringLength(7)]
+        [Column("color")]
         public string Color { get; set; } = "#3B82F6";
 
+        [Column("is_visible")]
         public bool IsVisible { get; set; } = true;
 
         [Column("created_at")]
@@ -59,9 +72,10 @@ namespace ai_indoor_nav_api.Models
         public DateTime UpdatedAt { get; set; } = UtcNow;
 
         // Geometry field: Point, Polygon, etc.
+        [Column("geometry")]
         public Polygon? Geometry { get; set; }
 
-        [ForeignKey("FloorId")]
+        [ForeignKey("floor_id")]
         [JsonIgnore]
         public Floor? Floor { get; init; }
 
