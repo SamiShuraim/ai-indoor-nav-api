@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json.Serialization;
 using ai_indoor_nav_api;
 using ai_indoor_nav_api.Data;
+using ai_indoor_nav_api.Models;
 using dotenv.net;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
@@ -98,11 +99,12 @@ using (var scope = app.Services.CreateScope())
 // Add this line before app.UseHttpsRedirection();
 app.UseCors();
 
-// Seed users at startup
+// Seed data at startup
 using (var scope = app.Services.CreateScope())
 {
     var services = scope.ServiceProvider;
     var userManager = services.GetRequiredService<UserManager<IdentityUser>>();
+    var dbContext = services.GetRequiredService<MyDbContext>();
 
     async Task SeedUsersAsync()
     {
@@ -125,7 +127,6 @@ using (var scope = app.Services.CreateScope())
             }
         };
 
-
         foreach (var u in users)
         {
             var userExists = await userManager.FindByNameAsync(u.UserName);
@@ -141,7 +142,63 @@ using (var scope = app.Services.CreateScope())
         }
     }
 
+    async Task SeedBuildingsAndFloorsAsync()
+    {
+        // Check if we already have buildings
+        if (!await dbContext.Buildings.AnyAsync())
+        {
+            var building = new Building
+            {
+                Name = "Main Building",
+                Description = "Primary building for indoor navigation",
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+            
+            dbContext.Buildings.Add(building);
+            await dbContext.SaveChangesAsync();
+        }
+
+        // Check if we already have floors
+        if (!await dbContext.Floors.AnyAsync())
+        {
+            var building = await dbContext.Buildings.FirstAsync();
+            
+            var floors = new[]
+            {
+                new Floor
+                {
+                    Name = "Ground Floor",
+                    FloorNumber = 0,
+                    BuildingId = building.Id,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                },
+                new Floor
+                {
+                    Name = "First Floor",
+                    FloorNumber = 1,
+                    BuildingId = building.Id,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                },
+                new Floor
+                {
+                    Name = "Second Floor",
+                    FloorNumber = 2,
+                    BuildingId = building.Id,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                }
+            };
+
+            dbContext.Floors.AddRange(floors);
+            await dbContext.SaveChangesAsync();
+        }
+    }
+
     await SeedUsersAsync();
+    await SeedBuildingsAndFloorsAsync();
 }
 
 // Configure the HTTP request pipeline.
