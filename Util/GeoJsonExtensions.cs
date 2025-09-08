@@ -1,4 +1,4 @@
-﻿using NetTopologySuite.Geometries;
+using NetTopologySuite.Geometries;
 using System.Reflection;
 using System.Text.Json;
 using NetTopologySuite.Features;
@@ -27,11 +27,21 @@ public static class GeoJsonExtensions
             }
             else
             {
-                // Avoid including complex objects like navigation properties
+                // Avoid including complex objects like navigation properties, but allow collections of simple types
                 if (prop.PropertyType.IsClass && prop.PropertyType != typeof(string))
-                    continue;
+                {
+                    // Allow arrays and IEnumerable<T> where T is a simple type
+                    var elementType = GetEnumerableElementType(prop.PropertyType);
+                    var isEnumerableOfSimple = elementType != null && IsSimpleType(elementType);
+                    var isArrayOfSimple = prop.PropertyType.IsArray && IsSimpleType(prop.PropertyType.GetElementType());
 
-                attributes.Add(prop.Name.ToSnakeCase(), value); // optional: convert name to snake_case
+                    if (!(isEnumerableOfSimple || isArrayOfSimple))
+                    {
+                        continue;
+                    }
+                }
+
+                attributes.Add(prop.Name.ToSnakeCase(), value);
             }
         }
 
@@ -55,6 +65,37 @@ public static class GeoJsonExtensions
         }
 
         return featureCollection;
+    }
+
+    private static bool IsSimpleType(Type type)
+    {
+        if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nullable<>))
+        {
+            type = Nullable.GetUnderlyingType(type);
+        }
+
+        return type.IsPrimitive
+            || type.IsEnum
+            || type == typeof(string)
+            || type == typeof(decimal)
+            || type == typeof(DateTime)
+            || type == typeof(Guid)
+            || type == typeof(double)
+            || type == typeof(float);
+    }
+
+    private static Type? GetEnumerableElementType(Type type)
+    {
+        if (type.IsArray)
+        {
+            return type.GetElementType();
+        }
+
+        var enumerableInterface = type
+            .GetInterfaces()
+            .FirstOrDefault(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IEnumerable<>));
+
+        return enumerableInterface?.GetGenericArguments().FirstOrDefault();
     }
 
     public static void PopulateFromJson(this object target, JsonElement json)
