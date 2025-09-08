@@ -78,6 +78,13 @@ namespace ai_indoor_nav_api.Controllers
             if (node == null)
                 return BadRequest(errorMessage);
 
+            // Validate foreign keys early to avoid 500s from the database layer
+            var floorExists = await context.Floors.AnyAsync(f => f.Id == node.FloorId);
+            if (!floorExists)
+            {
+                return BadRequest($"Invalid floor_id {node.FloorId}: floor does not exist");
+            }
+
             context.RouteNodes.Add(node);
             await context.SaveChangesAsync();
 

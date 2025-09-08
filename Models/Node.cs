@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using Newtonsoft.Json;
 using NetTopologySuite.Geometries;
@@ -15,7 +15,7 @@ namespace ai_indoor_nav_api.Models
 
         [Required]
         [Column("floor_id")]
-        public int FloorId { get; init; }
+        public int FloorId { get; set; }
         
         [Column("connected_node_ids", TypeName = "integer[]")]
         public List<int> ConnectedNodeIds { get; set; } = new();  // Your edges

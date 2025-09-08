@@ -1,4 +1,4 @@
-﻿using NetTopologySuite.Geometries;
+using NetTopologySuite.Geometries;
 using System.Reflection;
 using System.Text.Json;
 using NetTopologySuite.Features;
@@ -27,11 +27,21 @@ public static class GeoJsonExtensions
             }
             else
             {
-                // Avoid including complex objects like navigation properties
+                // Avoid including complex objects like navigation properties, but allow collections of simple types
                 if (prop.PropertyType.IsClass && prop.PropertyType != typeof(string))
-                    continue;
+                {
+                    // Allow arrays and IEnumerable<T> where T is a simple type
+                    var elementType = GetEnumerableElementType(prop.PropertyType);
+                    var isEnumerableOfSimple = elementType != null && IsSimpleType(elementType);
+                    var isArrayOfSimple = prop.PropertyType.IsArray && IsSimpleType(prop.PropertyType.GetElementType());
 
-                attributes.Add(prop.Name.ToSnakeCase(), value); // optional: convert name to snake_case
+                    if (!(isEnumerableOfSimple || isArrayOfSimple))
+                    {
+                        continue;
+                    }
+                }
+
+                attributes.Add(prop.Name.ToSnakeCase(), value);
             }
         }
 
@@ -55,6 +65,37 @@ public static class GeoJsonExtensions
         }
 
         return featureCollection;
+    }
+
+    private static bool IsSimpleType(Type type)
+    {
+        if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nullable<>))
+        {
+            type = Nullable.GetUnderlyingType(type);
+        }
+
+        return type.IsPrimitive
+            || type.IsEnum
+            || type == typeof(string)
+            || type == typeof(decimal)
+            || type == typeof(DateTime)
+            || type == typeof(Guid)
+            || type == typeof(double)
+            || type == typeof(float);
+    }
+
+    private static Type? GetEnumerableElementType(Type type)
+    {
+        if (type.IsArray)
+        {
+            return type.GetElementType();
+        }
+
+        var enumerableInterface = type
+            .GetInterfaces()
+            .FirstOrDefault(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IEnumerable<>));
+
+        return enumerableInterface?.GetGenericArguments().FirstOrDefault();
     }
 
     public static void PopulateFromJson(this object target, JsonElement json)
@@ -191,7 +232,9 @@ public static class GeoJsonExtensions
         foreach (var (key, value) in flattened.Props)
         {
             var prop = typeof(T).GetProperties()
-                .FirstOrDefault(p => string.Equals(p.Name, key, StringComparison.OrdinalIgnoreCase));
+                .FirstOrDefault(p =>
+                    string.Equals(p.Name, key, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(NormalizeName(p.Name), NormalizeName(key), StringComparison.OrdinalIgnoreCase));
 
             if (prop == null || !prop.CanWrite) continue;
 
@@ -204,8 +247,11 @@ public static class GeoJsonExtensions
                 else
                 {
                     var targetType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
-                    var converted = Convert.ChangeType(value, targetType);
-                    prop.SetValue(instance, converted);
+                    var converted = ConvertToType(value, targetType);
+                    if (converted != null || IsNullable(targetType))
+                    {
+                        prop.SetValue(instance, converted);
+                    }
                 }
             }
             catch
@@ -216,4 +262,76 @@ public static class GeoJsonExtensions
 
         return instance;
     }
+
+    private static object? ConvertToType(object value, Type targetType)
+    {
+        // Handle lists and arrays of simple types
+        var elementType = GetEnumerableElementType(targetType);
+        var isEnumerableTarget = elementType != null && targetType != typeof(string);
+
+        if (isEnumerableTarget)
+        {
+            var list = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(elementType))!;
+
+            if (value is JArray jArray)
+            {
+                foreach (var token in jArray)
+                {
+                    var elemObj = token?.ToObject<object?>();
+                    var convertedElem = elemObj == null ? null : ConvertToSimple(elemObj, elementType);
+                    list.Add(convertedElem);
+                }
+            }
+            else if (value is IEnumerable enumerable && value is not string)
+            {
+                foreach (var item in enumerable)
+                {
+                    var convertedElem = item == null ? null : ConvertToSimple(item, elementType);
+                    list.Add(convertedElem);
+                }
+            }
+            else
+            {
+                // Single value provided for a collection property
+                var convertedElem = ConvertToSimple(value, elementType);
+                list.Add(convertedElem);
+            }
+
+            // If the target is an array, convert list to array
+            if (targetType.IsArray)
+            {
+                var array = Array.CreateInstance(elementType, list.Count);
+                list.CopyTo(array, 0);
+                return array;
+            }
+
+            return list;
+        }
+
+        // Handle simple scalars
+        return ConvertToSimple(value, targetType);
+    }
+
+    private static object? ConvertToSimple(object value, Type targetType)
+    {
+        try
+        {
+            if (value is JValue jv)
+            {
+                value = jv.Value;
+            }
+
+            if (targetType == typeof(Guid)) return Guid.Parse(value.ToString()!);
+            if (targetType == typeof(DateTime)) return DateTime.Parse(value.ToString()!);
+            if (targetType.IsEnum) return Enum.Parse(targetType, value.ToString()!, true);
+
+            return Convert.ChangeType(value, targetType);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string NormalizeName(string name) => name.Replace("_", "");
 }
