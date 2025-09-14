@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -54,15 +55,65 @@ namespace ai_indoor_nav_api.Controllers
 
         // PUT: api/RouteNode/5
         [HttpPut("{id}")]
-        public async Task<IActionResult> UpdateRouteNode(int id, JsonElement jsonElement)
+        public async Task<IActionResult> UpdateRouteNode(int id)
         {
             var node = await context.RouteNodes.FindAsync(id);
             if (node == null) return NotFound();
 
-            node.PopulateFromJson(jsonElement);
+            try
+            {
+                // Read the JSON from the request body
+                using var reader = new StreamReader(Request.Body);
+                var jsonString = await reader.ReadToEndAsync();
+                
+                if (string.IsNullOrEmpty(jsonString))
+                {
+                    return BadRequest("Request body is empty.");
+                }
 
-            await context.SaveChangesAsync();
-            return NoContent();
+                using var jsonDocument = JsonDocument.Parse(jsonString);
+                var jsonElement = jsonDocument.RootElement;
+
+                // Check if this is a valid JSON object before trying to access properties
+                if (jsonElement.ValueKind != JsonValueKind.Object)
+                {
+                    return BadRequest($"Invalid JSON: Expected an object, got {jsonElement.ValueKind}.");
+                }
+
+                // Check if this is a GeoJSON Feature object
+                if (jsonElement.TryGetProperty("type", out var typeProperty) && 
+                    typeProperty.ValueKind == JsonValueKind.String &&
+                    typeProperty.GetString() == "Feature")
+                {
+                    // Handle GeoJSON Feature object
+                    if (jsonElement.TryGetProperty("properties", out var propertiesElement))
+                    {
+                        node.PopulateFromJson(propertiesElement);
+                    }
+
+                    // Handle geometry
+                    if (jsonElement.TryGetProperty("geometry", out var geometryElement))
+                    {
+                        node.UpdateGeometryFromJson(geometryElement);
+                    }
+                }
+                else
+                {
+                    // Handle flat JSON object (backward compatibility)
+                    node.PopulateFromJson(jsonElement);
+                }
+
+                await context.SaveChangesAsync();
+                return NoContent();
+            }
+            catch (JsonException ex)
+            {
+                return BadRequest($"Invalid JSON: {ex.Message}");
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest($"JSON parsing error: {ex.Message}");
+            }
         }
 
         // POST: api/RouteNode
