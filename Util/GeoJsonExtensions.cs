@@ -105,6 +105,10 @@ public static class GeoJsonExtensions
         var type = target.GetType();
         var properties = type.GetProperties(BindingFlags.Public | BindingFlags.Instance);
 
+        // Only try to enumerate if it's actually an object
+        if (json.ValueKind != JsonValueKind.Object)
+            return;
+
         foreach (var prop in json.EnumerateObject())
         {
             var property = properties.FirstOrDefault(p =>
