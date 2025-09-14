@@ -59,7 +59,27 @@ namespace ai_indoor_nav_api.Controllers
             var node = await context.RouteNodes.FindAsync(id);
             if (node == null) return NotFound();
 
-            node.PopulateFromJson(jsonElement);
+            // Check if this is a GeoJSON Feature object
+            if (jsonElement.TryGetProperty("type", out var typeProperty) && 
+                typeProperty.GetString() == "Feature")
+            {
+                // Handle GeoJSON Feature object
+                if (jsonElement.TryGetProperty("properties", out var propertiesElement))
+                {
+                    node.PopulateFromJson(propertiesElement);
+                }
+
+                // Handle geometry
+                if (jsonElement.TryGetProperty("geometry", out var geometryElement))
+                {
+                    node.UpdateGeometryFromJson(geometryElement);
+                }
+            }
+            else
+            {
+                // Handle flat JSON object (backward compatibility)
+                node.PopulateFromJson(jsonElement);
+            }
 
             await context.SaveChangesAsync();
             return NoContent();

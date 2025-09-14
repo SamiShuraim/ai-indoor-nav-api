@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Linq;
 using NetTopologySuite.Geometries;
 using System.Reflection;
 using System.Text.Json;
@@ -335,4 +336,39 @@ public static class GeoJsonExtensions
     }
 
     private static string NormalizeName(string name) => name.Replace("_", "");
+
+    public static void UpdateGeometryFromJson(this object target, JsonElement geometryElement)
+    {
+        var type = target.GetType();
+        var geometryProperty = type.GetProperty("Geometry", BindingFlags.Public | BindingFlags.Instance);
+        
+        if (geometryProperty == null || !geometryProperty.CanWrite)
+            return;
+
+        try
+        {
+            if (geometryElement.TryGetProperty("type", out var geoTypeElement) &&
+                geometryElement.TryGetProperty("coordinates", out var coordinatesElement))
+            {
+                var geoType = geoTypeElement.GetString();
+                
+                if (geoType == "Point" && coordinatesElement.ValueKind == JsonValueKind.Array)
+                {
+                    var coordinates = coordinatesElement.EnumerateArray().ToArray();
+                    if (coordinates.Length >= 2)
+                    {
+                        var x = coordinates[0].GetDouble();
+                        var y = coordinates[1].GetDouble();
+                        var point = new Point(x, y) { SRID = 4326 };
+                        geometryProperty.SetValue(target, point);
+                    }
+                }
+                // Add other geometry types (Polygon, LineString, etc.) as needed
+            }
+        }
+        catch
+        {
+            // Optional: log geometry parsing errors
+        }
+    }
 }
