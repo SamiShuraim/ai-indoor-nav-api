@@ -72,7 +72,7 @@ namespace ai_indoor_nav_api.Services
             foreach (var modification in modificationsNeeded)
             {
                 var nodeId = modification.Key;
-                var newConnections = modification.Value.ToArray();
+                var newConnections = modification.Value.ToList();
                 
                 var nodeToUpdate = nodesOnFloor.First(n => n.Id == nodeId);
                 var oldConnections = string.Join(", ", nodeToUpdate.ConnectedNodeIds);
