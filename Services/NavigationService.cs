@@ -84,7 +84,7 @@ namespace ai_indoor_nav_api.Services
                 }
 
                 var distance = CalculateDistance(location, node.Geometry);
-                Console.WriteLine($"[NAV_SERVICE] Node {node.Id} ('{node.Name}') distance: {distance:F6}");
+                Console.WriteLine($"[NAV_SERVICE] Node {node.Id} distance: {distance:F6}");
                 
                 if (distance < minDistance)
                 {
@@ -96,7 +96,7 @@ namespace ai_indoor_nav_api.Services
 
             if (closestNode != null)
             {
-                Console.WriteLine($"[NAV_SERVICE] Final closest node: ID={closestNode.Id}, Name='{closestNode.Name}', Distance={minDistance:F6}");
+                Console.WriteLine($"[NAV_SERVICE] Final closest node: ID={closestNode.Id}, Distance={minDistance:F6}");
             }
             else
             {
@@ -118,8 +118,8 @@ namespace ai_indoor_nav_api.Services
             var startNode = await _context.RouteNodes.FindAsync(startNodeId);
             var endNode = await _context.RouteNodes.FindAsync(endNodeId);
             
-            Console.WriteLine($"[NAV_SERVICE] Start node: {(startNode != null ? $"ID={startNode.Id}, FloorId={startNode.FloorId}, Name='{startNode.Name}'" : "NULL")}");
-            Console.WriteLine($"[NAV_SERVICE] End node: {(endNode != null ? $"ID={endNode.Id}, FloorId={endNode.FloorId}, Name='{endNode.Name}'" : "NULL")}");
+            Console.WriteLine($"[NAV_SERVICE] Start node: {(startNode != null ? $"ID={startNode.Id}, FloorId={startNode.FloorId}" : "NULL")}");
+            Console.WriteLine($"[NAV_SERVICE] End node: {(endNode != null ? $"ID={endNode.Id}, FloorId={endNode.FloorId}" : "NULL")}");
             
             if (startNode == null || endNode == null || startNode.FloorId != endNode.FloorId)
             {
@@ -165,7 +165,7 @@ namespace ai_indoor_nav_api.Services
                 distances[node.Id] = node.Id == startId ? 0 : double.MaxValue;
                 previous[node.Id] = null;
                 unvisited.Add(node.Id);
-                Console.WriteLine($"[DIJKSTRA] Initialized node {node.Id} ('{node.Name}') - Distance: {(node.Id == startId ? "0" : "∞")}, Connected to: [{string.Join(", ", node.ConnectedNodeIds)}]");
+                Console.WriteLine($"[DIJKSTRA] Initialized node {node.Id} - Distance: {(node.Id == startId ? "0" : "∞")}, Connected to: [{string.Join(", ", node.ConnectedNodeIds)}]");
             }
 
             Console.WriteLine($"[DIJKSTRA] Starting main algorithm loop with {unvisited.Count} unvisited nodes");
@@ -191,8 +191,8 @@ namespace ai_indoor_nav_api.Services
                 }
 
                 var currentNode = nodeDict[currentId];
-                Console.WriteLine($"[DIJKSTRA] Processing connections for node {currentId} ('{currentNode.Name}')");
-                Console.WriteLine($"[DIJKSTRA] Node has {currentNode.ConnectedNodeIds.Length} connections: [{string.Join(", ", currentNode.ConnectedNodeIds)}]");
+                Console.WriteLine($"[DIJKSTRA] Processing connections for node {currentId}");
+                Console.WriteLine($"[DIJKSTRA] Node has {currentNode.ConnectedNodeIds.Count} connections: [{string.Join(", ", currentNode.ConnectedNodeIds)}]");
                 
                 // Check all connected nodes
                 foreach (var connectedId in currentNode.ConnectedNodeIds)
@@ -257,7 +257,7 @@ namespace ai_indoor_nav_api.Services
             {
                 var node = nodeDict[current.Value];
                 path.Insert(0, node);
-                Console.WriteLine($"[DIJKSTRA] Path step: {current.Value} ('{node.Name}')");
+                Console.WriteLine($"[DIJKSTRA] Path step: {current.Value}");
                 current = previous[current.Value];
             }
 

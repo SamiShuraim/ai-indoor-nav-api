@@ -215,7 +215,7 @@ namespace ai_indoor_nav_api.Controllers
                     return NotFound("No route nodes found on the specified floor.");
                 }
 
-                Console.WriteLine($"[FINDPATH] Found start node: ID={startNode.Id}, Name='{startNode.Name}', FloorId={startNode.FloorId}");
+                Console.WriteLine($"[FINDPATH] Found start node: ID={startNode.Id}, FloorId={startNode.FloorId}");
                 Console.WriteLine($"[FINDPATH] Start node geometry: X={startNode.Geometry?.X}, Y={startNode.Geometry?.Y}");
 
                 Console.WriteLine("[FINDPATH] Step 3: Finding shortest path...");
@@ -234,7 +234,7 @@ namespace ai_indoor_nav_api.Controllers
                 for (int i = 0; i < path.Count; i++)
                 {
                     var node = path[i];
-                    Console.WriteLine($"[FINDPATH] Path[{i}]: Node ID={node.Id}, Name='{node.Name}', Geometry=({node.Geometry?.X}, {node.Geometry?.Y})");
+                    Console.WriteLine($"[FINDPATH] Path[{i}]: Node ID={node.Id}, Geometry=({node.Geometry?.X}, {node.Geometry?.Y})");
                 }
 
                 Console.WriteLine("[FINDPATH] Step 4: Converting path to GeoJSON...");
