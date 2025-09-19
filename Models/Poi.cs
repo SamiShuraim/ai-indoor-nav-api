@@ -82,7 +82,7 @@ namespace ai_indoor_nav_api.Models
         [Column("closest_node_distance")]
         public double? ClosestNodeDistance { get; set; }
 
-        [ForeignKey("floor_id")]
+        [ForeignKey("FloorId")]
         [JsonIgnore]
         public Floor? Floor { get; init; }
 
