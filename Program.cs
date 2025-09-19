@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json.Serialization;
 using ai_indoor_nav_api;
 using ai_indoor_nav_api.Data;
+using ai_indoor_nav_api.Services;
 using dotenv.net;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
@@ -49,6 +50,9 @@ builder.Services.AddDbContext<MyDbContext>(options =>
         npgsqlOptions => npgsqlOptions.UseNetTopologySuite()
     )
 );
+
+// Register navigation service
+builder.Services.AddScoped<NavigationService>();
 builder.Services.AddAuthentication(options =>
     {
         options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;

@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ai_indoor_nav_api.Data;
 using ai_indoor_nav_api.Models;
+using ai_indoor_nav_api.Services;
 using NetTopologySuite.Features;
 using NetTopologySuite.Geometries;
 using static System.DateTime;
@@ -17,7 +18,7 @@ namespace ai_indoor_nav_api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class RouteNodeController(MyDbContext context) : ControllerBase
+    public class RouteNodeController(MyDbContext context, NavigationService navigationService) : ControllerBase
     {
         // GET: api/RouteNode?floor=1&building=3
         [HttpGet]
@@ -139,6 +140,9 @@ namespace ai_indoor_nav_api.Controllers
             context.RouteNodes.Add(node);
             await context.SaveChangesAsync();
 
+            // Update closest nodes for POIs after creating the new node
+            await navigationService.UpdatePoiClosestNodesAsync(node);
+
             return CreatedAtAction(nameof(GetRouteNode), new { id = node.Id }, node.ToGeoJsonFeature());
         }
 
@@ -156,6 +160,97 @@ namespace ai_indoor_nav_api.Controllers
             await context.SaveChangesAsync();
 
             return NoContent();
+        }
+
+        // POST: api/RouteNode/findPath
+        [HttpPost("findPath")]
+        public async Task<ActionResult<FeatureCollection>> FindPath([FromBody] PathRequest request)
+        {
+            try
+            {
+                // Validate the request
+                if (request.UserLocation == null || request.DestinationPoiId <= 0)
+                {
+                    return BadRequest("User location and destination POI ID are required.");
+                }
+
+                // Find the destination POI
+                var destinationPoi = await context.Pois
+                    .Include(p => p.ClosestNode)
+                    .FirstOrDefaultAsync(p => p.Id == request.DestinationPoiId);
+
+                if (destinationPoi == null)
+                {
+                    return NotFound($"POI with ID {request.DestinationPoiId} not found.");
+                }
+
+                if (destinationPoi.ClosestNodeId == null)
+                {
+                    return BadRequest($"POI '{destinationPoi.Name}' does not have a closest node assigned. Please ensure route nodes exist near this POI.");
+                }
+
+                // Find the closest node to the user's current location
+                var userPoint = new Point(request.UserLocation.Longitude, request.UserLocation.Latitude) { SRID = 4326 };
+                var startNode = await navigationService.FindClosestNodeAsync(userPoint, destinationPoi.FloorId);
+
+                if (startNode == null)
+                {
+                    return NotFound("No route nodes found on the specified floor.");
+                }
+
+                // Find the shortest path
+                var path = await navigationService.FindShortestPathAsync(startNode.Id, destinationPoi.ClosestNodeId.Value);
+
+                if (path == null || path.Count == 0)
+                {
+                    return NotFound("No path found between the user location and destination POI.");
+                }
+
+                // Convert path to GeoJSON FeatureCollection
+                var pathFeatures = new FeatureCollection();
+
+                // Add path nodes as Point features
+                foreach (var node in path)
+                {
+                    var feature = node.ToGeoJsonFeature();
+                    feature.Attributes.Add("path_order", path.IndexOf(node));
+                    feature.Attributes.Add("is_path_node", true);
+                    pathFeatures.Add(feature);
+                }
+
+                // Add path edges as LineString features
+                for (int i = 0; i < path.Count - 1; i++)
+                {
+                    var currentNode = path[i];
+                    var nextNode = path[i + 1];
+
+                    if (currentNode.Geometry != null && nextNode.Geometry != null)
+                    {
+                        var coordinates = new[]
+                        {
+                            new Coordinate(currentNode.Geometry.X, currentNode.Geometry.Y),
+                            new Coordinate(nextNode.Geometry.X, nextNode.Geometry.Y)
+                        };
+
+                        var lineString = new LineString(coordinates) { SRID = 4326 };
+                        var lineFeature = new Feature(lineString, new AttributesTable
+                        {
+                            { "path_segment", i },
+                            { "is_path_edge", true },
+                            { "from_node_id", currentNode.Id },
+                            { "to_node_id", nextNode.Id }
+                        });
+
+                        pathFeatures.Add(lineFeature);
+                    }
+                }
+
+                return Ok(pathFeatures);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Internal server error: {ex.Message}");
+            }
         }
 
         private bool RouteNodeExists(int id)

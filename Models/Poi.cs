@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using Newtonsoft.Json;
 using ai_indoor_nav_api.Enums;
@@ -75,11 +75,22 @@ namespace ai_indoor_nav_api.Models
         [Column("geometry")]
         public Polygon? Geometry { get; set; }
 
+        // Navigation - closest route node for pathfinding
+        [Column("closest_node_id")]
+        public int? ClosestNodeId { get; set; }
+
+        [Column("closest_node_distance")]
+        public double? ClosestNodeDistance { get; set; }
+
         [ForeignKey("floor_id")]
         [JsonIgnore]
         public Floor? Floor { get; init; }
 
         [ForeignKey("CategoryId")]
         public PoiCategory? Category { get; set; }
+
+        [ForeignKey("ClosestNodeId")]
+        [JsonIgnore]
+        public RouteNode? ClosestNode { get; set; }
     }
 }
