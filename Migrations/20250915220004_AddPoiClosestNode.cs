@@ -1,11 +1,19 @@
+using System;
+using System.Collections.Generic;
+using ai_indoor_nav_api.Data;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using NetTopologySuite.Geometries;
+using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
 
 namespace ai_indoor_nav_api.Migrations
 {
     /// <inheritdoc />
-    public partial class AddClosestNodeToPoi : Migration
+    [DbContext(typeof(MyDbContext))]
+    [Migration("20250915220004_AddPoiClosestNode")]
+    public partial class AddPoiClosestNode : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -23,12 +31,13 @@ namespace ai_indoor_nav_api.Migrations
                 type: "double precision",
                 nullable: true);
 
-            // Add foreign key constraint
+            // Create index for the new foreign key column
             migrationBuilder.CreateIndex(
                 name: "IX_poi_closest_node_id",
                 table: "poi",
                 column: "closest_node_id");
 
+            // Add foreign key constraint
             migrationBuilder.AddForeignKey(
                 name: "FK_poi_route_nodes_closest_node_id",
                 table: "poi",
@@ -40,14 +49,17 @@ namespace ai_indoor_nav_api.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            // Remove the foreign key constraint
             migrationBuilder.DropForeignKey(
                 name: "FK_poi_route_nodes_closest_node_id",
                 table: "poi");
 
+            // Remove the index
             migrationBuilder.DropIndex(
                 name: "IX_poi_closest_node_id",
                 table: "poi");
 
+            // Remove the columns
             migrationBuilder.DropColumn(
                 name: "closest_node_distance",
                 table: "poi");
