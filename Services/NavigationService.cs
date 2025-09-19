@@ -19,6 +19,90 @@ namespace ai_indoor_nav_api.Services
         }
 
         /// <summary>
+        /// Fixes unidirectional connections to make them bidirectional for all nodes on a specific floor
+        /// </summary>
+        public async Task<(int fixedConnections, string report)> FixBidirectionalConnectionsAsync(int floorId)
+        {
+            Console.WriteLine($"[NAV_SERVICE] Starting bidirectional connection fix for floor {floorId}");
+            
+            var nodesOnFloor = await _context.RouteNodes
+                .Where(n => n.FloorId == floorId && n.IsVisible)
+                .ToListAsync();
+
+            Console.WriteLine($"[NAV_SERVICE] Found {nodesOnFloor.Count} visible nodes on floor {floorId}");
+
+            int fixedConnections = 0;
+            var reportLines = new List<string>();
+            var modificationsNeeded = new Dictionary<int, HashSet<int>>();
+
+            // First pass: identify missing bidirectional connections
+            foreach (var node in nodesOnFloor)
+            {
+                Console.WriteLine($"[NAV_SERVICE] Analyzing node {node.Id} with connections: [{string.Join(", ", node.ConnectedNodeIds)}]");
+                
+                foreach (var connectedNodeId in node.ConnectedNodeIds)
+                {
+                    var connectedNode = nodesOnFloor.FirstOrDefault(n => n.Id == connectedNodeId);
+                    if (connectedNode == null)
+                    {
+                        Console.WriteLine($"[NAV_SERVICE] WARNING: Node {node.Id} connects to {connectedNodeId} but that node is not visible on this floor");
+                        reportLines.Add($"WARNING: Node {node.Id} connects to {connectedNodeId} but that node is not visible on floor {floorId}");
+                        continue;
+                    }
+
+                    // Check if the connection is bidirectional
+                    if (!connectedNode.ConnectedNodeIds.Contains(node.Id))
+                    {
+                        Console.WriteLine($"[NAV_SERVICE] MISSING: Node {connectedNodeId} should connect back to {node.Id}");
+                        
+                        if (!modificationsNeeded.ContainsKey(connectedNodeId))
+                        {
+                            modificationsNeeded[connectedNodeId] = new HashSet<int>(connectedNode.ConnectedNodeIds);
+                        }
+                        modificationsNeeded[connectedNodeId].Add(node.Id);
+                        fixedConnections++;
+                    }
+                }
+            }
+
+            Console.WriteLine($"[NAV_SERVICE] Found {fixedConnections} missing bidirectional connections");
+            reportLines.Add($"Found {fixedConnections} missing bidirectional connections on floor {floorId}");
+
+            // Second pass: apply the fixes
+            foreach (var modification in modificationsNeeded)
+            {
+                var nodeId = modification.Key;
+                var newConnections = modification.Value.ToArray();
+                
+                var nodeToUpdate = nodesOnFloor.First(n => n.Id == nodeId);
+                var oldConnections = string.Join(", ", nodeToUpdate.ConnectedNodeIds);
+                
+                nodeToUpdate.ConnectedNodeIds = newConnections;
+                nodeToUpdate.UpdatedAt = DateTime.UtcNow;
+                
+                var newConnectionsStr = string.Join(", ", newConnections);
+                Console.WriteLine($"[NAV_SERVICE] Updated node {nodeId} connections: [{oldConnections}] → [{newConnectionsStr}]");
+                reportLines.Add($"Updated node {nodeId}: [{oldConnections}] → [{newConnectionsStr}]");
+            }
+
+            if (fixedConnections > 0)
+            {
+                await _context.SaveChangesAsync();
+                Console.WriteLine($"[NAV_SERVICE] Saved {fixedConnections} connection fixes to database");
+                reportLines.Add($"Successfully saved {fixedConnections} connection fixes to database");
+            }
+            else
+            {
+                reportLines.Add("No bidirectional connection fixes needed - all connections are already bidirectional");
+            }
+
+            var report = string.Join("\n", reportLines);
+            Console.WriteLine($"[NAV_SERVICE] Bidirectional fix completed. Report:\n{report}");
+            
+            return (fixedConnections, report);
+        }
+
+        /// <summary>
         /// Updates the closest node for POIs when a new node is created
         /// </summary>
         public async Task UpdatePoiClosestNodesAsync(RouteNode newNode)

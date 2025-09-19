@@ -298,6 +298,54 @@ namespace ai_indoor_nav_api.Controllers
             }
         }
 
+        // POST: api/RouteNode/fixBidirectionalConnections
+        [HttpPost("fixBidirectionalConnections")]
+        public async Task<ActionResult<object>> FixBidirectionalConnections([FromBody] FixConnectionsRequest request)
+        {
+            Console.WriteLine("=== FIX BIDIRECTIONAL CONNECTIONS ENDPOINT STARTED ===");
+            try
+            {
+                Console.WriteLine($"[FIX_CONNECTIONS] Received request for floor ID: {request.FloorId}");
+
+                // Validate floor exists
+                var floorExists = await context.Floors.AnyAsync(f => f.Id == request.FloorId);
+                if (!floorExists)
+                {
+                    Console.WriteLine($"[FIX_CONNECTIONS] ERROR: Floor {request.FloorId} does not exist");
+                    return BadRequest($"Floor with ID {request.FloorId} does not exist.");
+                }
+
+                Console.WriteLine($"[FIX_CONNECTIONS] Floor {request.FloorId} exists, proceeding with bidirectional fix...");
+
+                // Call the navigation service to fix bidirectional connections
+                var (fixedConnections, report) = await navigationService.FixBidirectionalConnectionsAsync(request.FloorId);
+
+                Console.WriteLine($"[FIX_CONNECTIONS] Fix completed: {fixedConnections} connections fixed");
+                Console.WriteLine("=== FIX BIDIRECTIONAL CONNECTIONS ENDPOINT COMPLETED ===");
+
+                return Ok(new
+                {
+                    success = true,
+                    floorId = request.FloorId,
+                    fixedConnections = fixedConnections,
+                    report = report,
+                    timestamp = DateTime.UtcNow
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[FIX_CONNECTIONS] EXCEPTION: {ex.Message}");
+                Console.WriteLine($"[FIX_CONNECTIONS] STACK TRACE: {ex.StackTrace}");
+                Console.WriteLine("=== FIX BIDIRECTIONAL CONNECTIONS ENDPOINT FAILED ===");
+                return StatusCode(500, new
+                {
+                    success = false,
+                    error = $"Internal server error: {ex.Message}",
+                    timestamp = DateTime.UtcNow
+                });
+            }
+        }
+
         private bool RouteNodeExists(int id)
         {
             return context.RouteNodes.Any(e => e.Id == id);
