@@ -166,14 +166,21 @@ namespace ai_indoor_nav_api.Controllers
         [HttpPost("findPath")]
         public async Task<ActionResult<FeatureCollection>> FindPath([FromBody] PathRequest request)
         {
+            Console.WriteLine("=== FINDPATH ENDPOINT STARTED ===");
             try
             {
+                Console.WriteLine($"[FINDPATH] Received request:");
+                Console.WriteLine($"[FINDPATH] - User Location: {request?.UserLocation?.Latitude}, {request?.UserLocation?.Longitude}");
+                Console.WriteLine($"[FINDPATH] - Destination POI ID: {request?.DestinationPoiId}");
+
                 // Validate the request
                 if (request.UserLocation == null || request.DestinationPoiId <= 0)
                 {
+                    Console.WriteLine("[FINDPATH] ERROR: Invalid request - User location or POI ID missing");
                     return BadRequest("User location and destination POI ID are required.");
                 }
 
+                Console.WriteLine("[FINDPATH] Step 1: Looking up destination POI...");
                 // Find the destination POI
                 var destinationPoi = await context.Pois
                     .Include(p => p.ClosestNode)
@@ -181,44 +188,72 @@ namespace ai_indoor_nav_api.Controllers
 
                 if (destinationPoi == null)
                 {
+                    Console.WriteLine($"[FINDPATH] ERROR: POI with ID {request.DestinationPoiId} not found");
                     return NotFound($"POI with ID {request.DestinationPoiId} not found.");
                 }
 
+                Console.WriteLine($"[FINDPATH] Found POI: '{destinationPoi.Name}' on Floor ID: {destinationPoi.FloorId}");
+                Console.WriteLine($"[FINDPATH] POI Closest Node ID: {destinationPoi.ClosestNodeId}");
+                Console.WriteLine($"[FINDPATH] POI Closest Node Distance: {destinationPoi.ClosestNodeDistance}");
+
                 if (destinationPoi.ClosestNodeId == null)
                 {
+                    Console.WriteLine($"[FINDPATH] ERROR: POI '{destinationPoi.Name}' does not have a closest node assigned");
                     return BadRequest($"POI '{destinationPoi.Name}' does not have a closest node assigned. Please ensure route nodes exist near this POI.");
                 }
 
+                Console.WriteLine("[FINDPATH] Step 2: Creating user point and finding closest node...");
                 // Find the closest node to the user's current location
                 var userPoint = new Point(request.UserLocation.Longitude, request.UserLocation.Latitude) { SRID = 4326 };
+                Console.WriteLine($"[FINDPATH] User point created: X={userPoint.X}, Y={userPoint.Y}, SRID={userPoint.SRID}");
+                
                 var startNode = await navigationService.FindClosestNodeAsync(userPoint, destinationPoi.FloorId);
 
                 if (startNode == null)
                 {
+                    Console.WriteLine($"[FINDPATH] ERROR: No route nodes found on floor {destinationPoi.FloorId}");
                     return NotFound("No route nodes found on the specified floor.");
                 }
 
+                Console.WriteLine($"[FINDPATH] Found start node: ID={startNode.Id}, Name='{startNode.Name}', FloorId={startNode.FloorId}");
+                Console.WriteLine($"[FINDPATH] Start node geometry: X={startNode.Geometry?.X}, Y={startNode.Geometry?.Y}");
+
+                Console.WriteLine("[FINDPATH] Step 3: Finding shortest path...");
+                Console.WriteLine($"[FINDPATH] Path from Start Node {startNode.Id} to End Node {destinationPoi.ClosestNodeId.Value}");
+                
                 // Find the shortest path
                 var path = await navigationService.FindShortestPathAsync(startNode.Id, destinationPoi.ClosestNodeId.Value);
 
                 if (path == null || path.Count == 0)
                 {
+                    Console.WriteLine("[FINDPATH] ERROR: No path found between nodes");
                     return NotFound("No path found between the user location and destination POI.");
                 }
 
+                Console.WriteLine($"[FINDPATH] SUCCESS: Path found with {path.Count} nodes");
+                for (int i = 0; i < path.Count; i++)
+                {
+                    var node = path[i];
+                    Console.WriteLine($"[FINDPATH] Path[{i}]: Node ID={node.Id}, Name='{node.Name}', Geometry=({node.Geometry?.X}, {node.Geometry?.Y})");
+                }
+
+                Console.WriteLine("[FINDPATH] Step 4: Converting path to GeoJSON...");
                 // Convert path to GeoJSON FeatureCollection
                 var pathFeatures = new FeatureCollection();
 
                 // Add path nodes as Point features
+                Console.WriteLine("[FINDPATH] Adding path nodes as Point features...");
                 foreach (var node in path)
                 {
                     var feature = node.ToGeoJsonFeature();
                     feature.Attributes.Add("path_order", path.IndexOf(node));
                     feature.Attributes.Add("is_path_node", true);
                     pathFeatures.Add(feature);
+                    Console.WriteLine($"[FINDPATH] Added node feature: ID={node.Id}, Order={path.IndexOf(node)}");
                 }
 
                 // Add path edges as LineString features
+                Console.WriteLine("[FINDPATH] Adding path edges as LineString features...");
                 for (int i = 0; i < path.Count - 1; i++)
                 {
                     var currentNode = path[i];
@@ -242,13 +277,23 @@ namespace ai_indoor_nav_api.Controllers
                         });
 
                         pathFeatures.Add(lineFeature);
+                        Console.WriteLine($"[FINDPATH] Added edge feature: Segment={i}, From={currentNode.Id}, To={nextNode.Id}");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"[FINDPATH] WARNING: Skipped edge {i} - missing geometry on node {currentNode.Id} or {nextNode.Id}");
                     }
                 }
 
+                Console.WriteLine($"[FINDPATH] SUCCESS: Returning FeatureCollection with {pathFeatures.Count} features");
+                Console.WriteLine("=== FINDPATH ENDPOINT COMPLETED ===");
                 return Ok(pathFeatures);
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"[FINDPATH] EXCEPTION: {ex.Message}");
+                Console.WriteLine($"[FINDPATH] STACK TRACE: {ex.StackTrace}");
+                Console.WriteLine("=== FINDPATH ENDPOINT FAILED ===");
                 return StatusCode(500, $"Internal server error: {ex.Message}");
             }
         }
