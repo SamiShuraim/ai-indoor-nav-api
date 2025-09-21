@@ -133,6 +133,117 @@ namespace ai_indoor_nav_api.Services
         }
 
         /// <summary>
+        /// Recalculates the closest node for all POIs on a specific floor or all floors
+        /// This is a separate operation that can be called manually when needed
+        /// </summary>
+        public async Task<(int updatedPois, string report)> RecalculateAllPoiClosestNodesAsync(int? floorId = null)
+        {
+            Console.WriteLine($"[NAV_SERVICE] Starting POI closest nodes recalculation for {(floorId.HasValue ? $"floor {floorId}" : "all floors")}");
+            
+            // Get POIs to process
+            var poisQuery = _context.Pois.AsQueryable();
+            if (floorId.HasValue)
+            {
+                poisQuery = poisQuery.Where(p => p.FloorId == floorId.Value);
+            }
+            var poisToProcess = await poisQuery.ToListAsync();
+            
+            Console.WriteLine($"[NAV_SERVICE] Found {poisToProcess.Count} POIs to process");
+            
+            var reportLines = new List<string>();
+            int updatedPois = 0;
+            
+            // Group POIs by floor for efficient processing
+            var poisByFloor = poisToProcess.GroupBy(p => p.FloorId).ToList();
+            
+            foreach (var floorGroup in poisByFloor)
+            {
+                var currentFloorId = floorGroup.Key;
+                var poisOnFloor = floorGroup.ToList();
+                
+                Console.WriteLine($"[NAV_SERVICE] Processing {poisOnFloor.Count} POIs on floor {currentFloorId}");
+                reportLines.Add($"Processing {poisOnFloor.Count} POIs on floor {currentFloorId}");
+                
+                // Get all visible nodes on this floor
+                var nodesOnFloor = await _context.RouteNodes
+                    .Where(n => n.FloorId == currentFloorId && n.IsVisible)
+                    .ToListAsync();
+                
+                Console.WriteLine($"[NAV_SERVICE] Found {nodesOnFloor.Count} visible nodes on floor {currentFloorId}");
+                
+                if (nodesOnFloor.Count == 0)
+                {
+                    reportLines.Add($"WARNING: No visible nodes found on floor {currentFloorId}, skipping POIs on this floor");
+                    continue;
+                }
+                
+                // Process each POI on this floor
+                foreach (var poi in poisOnFloor)
+                {
+                    if (poi.Geometry == null)
+                    {
+                        Console.WriteLine($"[NAV_SERVICE] Skipping POI {poi.Id} ({poi.Name}) - null geometry");
+                        continue;
+                    }
+                    
+                    var poiCenter = poi.Geometry.Centroid;
+                    RouteNode? closestNode = null;
+                    double minDistance = double.MaxValue;
+                    
+                    // Find the closest node to this POI
+                    foreach (var node in nodesOnFloor)
+                    {
+                        if (node.Geometry == null) continue;
+                        
+                        var distance = CalculateDistance(poiCenter, node.Geometry);
+                        if (distance < minDistance)
+                        {
+                            minDistance = distance;
+                            closestNode = node;
+                        }
+                    }
+                    
+                    // Update the POI if we found a closest node
+                    if (closestNode != null)
+                    {
+                        var oldNodeId = poi.ClosestNodeId;
+                        var oldDistance = poi.ClosestNodeDistance;
+                        
+                        poi.ClosestNodeId = closestNode.Id;
+                        poi.ClosestNodeDistance = minDistance;
+                        poi.UpdatedAt = DateTime.UtcNow;
+                        updatedPois++;
+                        
+                        Console.WriteLine($"[NAV_SERVICE] Updated POI {poi.Id} ({poi.Name}): Node {oldNodeId} (dist: {oldDistance:F6}) → Node {closestNode.Id} (dist: {minDistance:F6})");
+                        reportLines.Add($"POI '{poi.Name}' (ID: {poi.Id}): Node {oldNodeId} → Node {closestNode.Id} (distance: {minDistance:F6})");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"[NAV_SERVICE] No closest node found for POI {poi.Id} ({poi.Name})");
+                        reportLines.Add($"WARNING: No closest node found for POI '{poi.Name}' (ID: {poi.Id})");
+                    }
+                }
+            }
+            
+            // Save all changes
+            if (updatedPois > 0)
+            {
+                await _context.SaveChangesAsync();
+                Console.WriteLine($"[NAV_SERVICE] Saved {updatedPois} POI updates to database");
+                reportLines.Add($"Successfully updated {updatedPois} POIs and saved to database");
+            }
+            else
+            {
+                reportLines.Add("No POIs were updated");
+            }
+            
+            var report = string.Join("\n", reportLines);
+            Console.WriteLine($"[NAV_SERVICE] POI closest nodes recalculation completed. Updated {updatedPois} POIs");
+            
+            return (updatedPois, report);
+        }
+
+        /// <summary>
         /// Calculates the Euclidean distance between two points
         /// </summary>
         public static double CalculateDistance(Point point1, Point point2)
