@@ -102,10 +102,20 @@ namespace ai_indoor_nav_api.Controllers
         [HttpPost]
         public async Task<ActionResult<BeaconType>> PostBeaconType(BeaconType beaconType)
         {
-            context.BeaconTypes.Add(beaconType);
+            // Ensure ID is not set by the client - let database generate it
+            var newBeaconType = new BeaconType
+            {
+                Name = beaconType.Name,
+                Description = beaconType.Description,
+                TransmissionPower = beaconType.TransmissionPower,
+                BatteryLife = beaconType.BatteryLife,
+                RangeMeters = beaconType.RangeMeters
+            };
+
+            context.BeaconTypes.Add(newBeaconType);
             await context.SaveChangesAsync();
 
-            return CreatedAtAction("GetBeaconType", new { id = beaconType.Id }, beaconType);
+            return CreatedAtAction("GetBeaconType", new { id = newBeaconType.Id }, newBeaconType);
         }
 
         // DELETE: api/BeaconType/5

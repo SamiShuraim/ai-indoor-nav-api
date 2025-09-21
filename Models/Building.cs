@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using Newtonsoft.Json;
 
@@ -9,7 +9,7 @@ namespace ai_indoor_nav_api.Models
     {
         [Key]
         [Column("id")]
-        public int Id { get; set; }
+        public int Id { get; init; }
 
         [Required]
         [StringLength(255)]
