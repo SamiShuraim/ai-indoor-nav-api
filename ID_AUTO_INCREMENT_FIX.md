@@ -34,8 +34,8 @@ The application was allowing the frontend to specify ID values when creating new
   - `RouteNodeController.CreateRouteNode()`
 
 ### 4. Database Migration
-- Created migration `20250921175423_FixAutoIncrementSequences`
-- Includes SQL commands to reset auto-increment sequences to ensure they're at the correct values
+- Created migration `20250921180500_ResetAutoIncrementSequences`
+- Contains ONLY the SQL commands to reset auto-increment sequences to ensure they're at the correct values
 - This handles cases where existing records might have manually assigned IDs
 
 ## Migration Instructions
