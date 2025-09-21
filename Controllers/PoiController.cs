@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using ai_indoor_nav_api.Data;
 using ai_indoor_nav_api.Enums;
 using ai_indoor_nav_api.Models;
+using ai_indoor_nav_api.Services;
 using NetTopologySuite.Features;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
@@ -14,7 +15,7 @@ namespace ai_indoor_nav_api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class PoiController(MyDbContext context) : ControllerBase
+    public class PoiController(MyDbContext context, NavigationService navigationService) : ControllerBase
     {
         [HttpGet]
         public async Task<ActionResult<FeatureCollection>> GetPois([FromQuery] int? floor, [FromQuery] int? building)
@@ -112,6 +113,51 @@ namespace ai_indoor_nav_api.Controllers
             await context.SaveChangesAsync();
 
             return NoContent();
+        }
+
+        // POST: api/Poi/recalculateClosestNodes
+        [HttpPost("recalculateClosestNodes")]
+        public async Task<IActionResult> RecalculateClosestNodes([FromQuery] int? floorId = null)
+        {
+            try
+            {
+                Console.WriteLine($"[POI_CONTROLLER] Starting POI closest nodes recalculation for {(floorId.HasValue ? $"floor {floorId}" : "all floors")}");
+                
+                // Validate floor exists if specified
+                if (floorId.HasValue)
+                {
+                    var floorExists = await context.Floors.AnyAsync(f => f.Id == floorId.Value);
+                    if (!floorExists)
+                    {
+                        return BadRequest($"Floor with ID {floorId} does not exist");
+                    }
+                }
+
+                var (updatedPois, report) = await navigationService.RecalculateAllPoiClosestNodesAsync(floorId);
+                
+                Console.WriteLine($"[POI_CONTROLLER] Recalculation completed. Updated {updatedPois} POIs");
+
+                return Ok(new
+                {
+                    success = true,
+                    updatedPois = updatedPois,
+                    floorId = floorId,
+                    message = floorId.HasValue 
+                        ? $"Successfully recalculated closest nodes for {updatedPois} POIs on floor {floorId}"
+                        : $"Successfully recalculated closest nodes for {updatedPois} POIs across all floors",
+                    report = report
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[POI_CONTROLLER] Error during POI closest nodes recalculation: {ex.Message}");
+                return StatusCode(500, new
+                {
+                    success = false,
+                    error = "An error occurred while recalculating POI closest nodes",
+                    details = ex.Message
+                });
+            }
         }
 
         private bool PoiExists(int id)

@@ -140,9 +140,6 @@ namespace ai_indoor_nav_api.Controllers
             context.RouteNodes.Add(node);
             await context.SaveChangesAsync();
 
-            // Update closest nodes for POIs after creating the new node
-            await navigationService.UpdatePoiClosestNodesAsync(node);
-
             return CreatedAtAction(nameof(GetRouteNode), new { id = node.Id }, node.ToGeoJsonFeature());
         }
 
