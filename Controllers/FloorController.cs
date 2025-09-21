@@ -86,14 +86,20 @@ namespace ai_indoor_nav_api.Controllers
         [HttpPost]
         public async Task<ActionResult<Floor>> PostFloor(Floor floor)
         {
-            // Set timestamps
-            floor.CreatedAt = DateTime.UtcNow;
-            floor.UpdatedAt = DateTime.UtcNow;
+            // Ensure ID is not set by the client - let database generate it
+            var newFloor = new Floor
+            {
+                Name = floor.Name,
+                FloorNumber = floor.FloorNumber,
+                BuildingId = floor.BuildingId,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
 
-            context.Floors.Add(floor);
+            context.Floors.Add(newFloor);
             await context.SaveChangesAsync();
 
-            return CreatedAtAction("GetFloor", new { id = floor.Id }, floor);
+            return CreatedAtAction("GetFloor", new { id = newFloor.Id }, newFloor);
         }
 
         // DELETE: api/Floor/5

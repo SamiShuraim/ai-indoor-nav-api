@@ -116,6 +116,9 @@ public static class GeoJsonExtensions
                 p.CanWrite);
 
             if (property == null) continue;
+            
+            // Skip ID property - let database generate it
+            if (string.Equals(property.Name, "Id", StringComparison.OrdinalIgnoreCase)) continue;
 
             try
             {
@@ -243,6 +246,9 @@ public static class GeoJsonExtensions
                     string.Equals(NormalizeName(p.Name), NormalizeName(key), StringComparison.OrdinalIgnoreCase));
 
             if (prop == null || !prop.CanWrite) continue;
+            
+            // Skip ID property - let database generate it
+            if (string.Equals(prop.Name, "Id", StringComparison.OrdinalIgnoreCase)) continue;
 
             try
             {

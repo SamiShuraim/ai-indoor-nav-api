@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NetTopologySuite.Geometries;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -13,9 +14,11 @@ using ai_indoor_nav_api.Data;
 namespace ai_indoor_nav_api.Migrations
 {
     [DbContext(typeof(MyDbContext))]
-    partial class MyDbContextModelSnapshot : ModelSnapshot
+    [Migration("20250811212352_rest_converted_from_snake_case")]
+    partial class rest_converted_from_snake_case
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -425,14 +428,6 @@ namespace ai_indoor_nav_api.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("category_id");
 
-                    b.Property<double?>("ClosestNodeDistance")
-                        .HasColumnType("double precision")
-                        .HasColumnName("closest_node_distance");
-
-                    b.Property<int?>("ClosestNodeId")
-                        .HasColumnType("integer")
-                        .HasColumnName("closest_node_id");
-
                     b.Property<string>("Color")
                         .IsRequired()
                         .HasMaxLength(7)
@@ -475,16 +470,23 @@ namespace ai_indoor_nav_api.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");
 
+                    b.Property<int?>("floor_id")
+                        .HasColumnType("integer");
+
                     b.HasKey("Id");
 
                     b.HasIndex("CategoryId");
 
-                    b.HasIndex("ClosestNodeId");
+                    b.HasIndex("floor_id");
 
                     b.HasIndex("FloorId", "CategoryId")
                         .HasDatabaseName("idx_floor_category");
 
-                    b.ToTable("poi");
+                    b.ToTable("poi", t =>
+                        {
+                            t.Property("floor_id")
+                                .HasColumnName("floor_id1");
+                        });
                 });
 
             modelBuilder.Entity("ai_indoor_nav_api.Models.PoiCategory", b =>
@@ -651,19 +653,11 @@ namespace ai_indoor_nav_api.Migrations
                         .WithMany("Pois")
                         .HasForeignKey("CategoryId");
 
-                    b.HasOne("ai_indoor_nav_api.Models.RouteNode", "ClosestNode")
-                        .WithMany()
-                        .HasForeignKey("ClosestNodeId");
-
                     b.HasOne("ai_indoor_nav_api.Models.Floor", "Floor")
                         .WithMany("Pois")
-                        .HasForeignKey("FloorId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .HasForeignKey("floor_id");
 
                     b.Navigation("Category");
-
-                    b.Navigation("ClosestNode");
 
                     b.Navigation("Floor");
                 });

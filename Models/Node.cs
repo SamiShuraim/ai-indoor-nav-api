@@ -11,7 +11,7 @@ namespace ai_indoor_nav_api.Models
     {
         [Key]
         [Column("id")]
-        public int Id { get; set; }
+        public int Id { get; init; }
 
         [Required]
         [Column("floor_id")]

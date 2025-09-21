@@ -81,10 +81,18 @@ namespace ai_indoor_nav_api.Controllers
         [HttpPost]
         public async Task<ActionResult<PoiCategory>> PostPoiCategory(PoiCategory poiCategory)
         {
-            context.PoiCategories.Add(poiCategory);
+            // Ensure ID is not set by the client - let database generate it
+            var newPoiCategory = new PoiCategory
+            {
+                Name = poiCategory.Name,
+                Color = poiCategory.Color,
+                Description = poiCategory.Description
+            };
+
+            context.PoiCategories.Add(newPoiCategory);
             await context.SaveChangesAsync();
 
-            return CreatedAtAction("GetPoiCategory", new { id = poiCategory.Id }, poiCategory);
+            return CreatedAtAction("GetPoiCategory", new { id = newPoiCategory.Id }, newPoiCategory);
         }
 
         // DELETE: api/PoiCategory/5

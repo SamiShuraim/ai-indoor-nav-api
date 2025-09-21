@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NetTopologySuite.Geometries;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -13,9 +14,11 @@ using ai_indoor_nav_api.Data;
 namespace ai_indoor_nav_api.Migrations
 {
     [DbContext(typeof(MyDbContext))]
-    partial class MyDbContextModelSnapshot : ModelSnapshot
+    [Migration("20250810163652_Initial")]
+    partial class Initial
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -416,60 +419,42 @@ namespace ai_indoor_nav_api.Migrations
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasColumnName("id");
+                        .HasColumnType("integer");
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<int?>("CategoryId")
-                        .HasColumnType("integer")
-                        .HasColumnName("category_id");
-
-                    b.Property<double?>("ClosestNodeDistance")
-                        .HasColumnType("double precision")
-                        .HasColumnName("closest_node_distance");
-
-                    b.Property<int?>("ClosestNodeId")
-                        .HasColumnType("integer")
-                        .HasColumnName("closest_node_id");
+                        .HasColumnType("integer");
 
                     b.Property<string>("Color")
                         .IsRequired()
                         .HasMaxLength(7)
-                        .HasColumnType("character varying(7)")
-                        .HasColumnName("color");
+                        .HasColumnType("character varying(7)");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
                     b.Property<string>("Description")
-                        .HasMaxLength(255)
-                        .HasColumnType("character varying(255)")
-                        .HasColumnName("description");
+                        .HasColumnType("text");
 
                     b.Property<int>("FloorId")
-                        .HasColumnType("integer")
-                        .HasColumnName("floor_id");
+                        .HasColumnType("integer");
 
                     b.Property<Polygon>("Geometry")
-                        .HasColumnType("geometry")
-                        .HasColumnName("geometry");
+                        .HasColumnType("geometry");
 
                     b.Property<bool>("IsVisible")
-                        .HasColumnType("boolean")
-                        .HasColumnName("is_visible");
+                        .HasColumnType("boolean");
 
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(255)
-                        .HasColumnType("character varying(255)")
-                        .HasColumnName("name");
+                        .HasColumnType("character varying(255)");
 
                     b.Property<string>("PoiType")
                         .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("poi_type");
+                        .HasColumnType("text");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")
@@ -478,8 +463,6 @@ namespace ai_indoor_nav_api.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("CategoryId");
-
-                    b.HasIndex("ClosestNodeId");
 
                     b.HasIndex("FloorId", "CategoryId")
                         .HasDatabaseName("idx_floor_category");
@@ -491,26 +474,22 @@ namespace ai_indoor_nav_api.Migrations
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasColumnName("id");
+                        .HasColumnType("integer");
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<string>("Color")
                         .IsRequired()
                         .HasMaxLength(7)
-                        .HasColumnType("character varying(7)")
-                        .HasColumnName("color");
+                        .HasColumnType("character varying(7)");
 
                     b.Property<string>("Description")
-                        .HasColumnType("text")
-                        .HasColumnName("description");
+                        .HasColumnType("text");
 
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("name");
+                        .HasColumnType("character varying(100)");
 
                     b.HasKey("Id");
 
@@ -524,8 +503,7 @@ namespace ai_indoor_nav_api.Migrations
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasColumnName("id");
+                        .HasColumnType("integer");
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
@@ -539,17 +517,13 @@ namespace ai_indoor_nav_api.Migrations
                         .HasColumnName("created_at");
 
                     b.Property<int>("FloorId")
-                        .HasColumnType("integer")
-                        .HasColumnName("floor_id");
+                        .HasColumnType("integer");
 
                     b.Property<Point>("Geometry")
-                        .IsRequired()
-                        .HasColumnType("geometry")
-                        .HasColumnName("geometry");
+                        .HasColumnType("geometry");
 
                     b.Property<bool>("IsVisible")
-                        .HasColumnType("boolean")
-                        .HasColumnName("is_visible");
+                        .HasColumnType("boolean");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")
@@ -651,10 +625,6 @@ namespace ai_indoor_nav_api.Migrations
                         .WithMany("Pois")
                         .HasForeignKey("CategoryId");
 
-                    b.HasOne("ai_indoor_nav_api.Models.RouteNode", "ClosestNode")
-                        .WithMany()
-                        .HasForeignKey("ClosestNodeId");
-
                     b.HasOne("ai_indoor_nav_api.Models.Floor", "Floor")
                         .WithMany("Pois")
                         .HasForeignKey("FloorId")
@@ -662,8 +632,6 @@ namespace ai_indoor_nav_api.Migrations
                         .IsRequired();
 
                     b.Navigation("Category");
-
-                    b.Navigation("ClosestNode");
 
                     b.Navigation("Floor");
                 });
