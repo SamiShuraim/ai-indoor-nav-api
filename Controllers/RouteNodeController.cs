@@ -343,6 +343,49 @@ namespace ai_indoor_nav_api.Controllers
             }
         }
 
+        // POST: api/RouteNode/addConnection
+        [HttpPost("addConnection")]
+        public async Task<IActionResult> AddConnection([FromBody] AddConnectionRequest request)
+        {
+            try
+            {
+                // 1. Get both nodes from database
+                var node1 = await context.RouteNodes.FindAsync(request.NodeId1);
+                var node2 = await context.RouteNodes.FindAsync(request.NodeId2);
+                
+                if (node1 == null || node2 == null)
+                {
+                    return NotFound("One or both nodes not found");
+                }
+
+                // 2. Get current connections (handle null)
+                var connections1 = node1.ConnectedNodeIds ?? new List<int>();
+                var connections2 = node2.ConnectedNodeIds ?? new List<int>();
+
+                // 3. Add bidirectional connections (avoid duplicates)
+                if (!connections1.Contains(request.NodeId2))
+                {
+                    connections1.Add(request.NodeId2);
+                    node1.ConnectedNodeIds = connections1;
+                }
+                
+                if (!connections2.Contains(request.NodeId1))
+                {
+                    connections2.Add(request.NodeId1);
+                    node2.ConnectedNodeIds = connections2;
+                }
+
+                // 4. Save changes
+                await context.SaveChangesAsync();
+                
+                return Ok();
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error adding connection: {ex.Message}");
+            }
+        }
+
         private bool RouteNodeExists(int id)
         {
             return context.RouteNodes.Any(e => e.Id == id);
