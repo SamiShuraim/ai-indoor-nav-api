@@ -53,6 +53,8 @@ builder.Services.AddDbContext<MyDbContext>(options =>
 
 // Register navigation service
 builder.Services.AddScoped<NavigationService>();
+// Register load balancer service as singleton to maintain state across requests
+builder.Services.AddSingleton<LoadBalancerService>();
 builder.Services.AddAuthentication(options =>
     {
         options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
