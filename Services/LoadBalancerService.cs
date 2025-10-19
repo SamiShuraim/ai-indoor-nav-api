@@ -6,12 +6,12 @@ namespace ai_indoor_nav_api.Services
     public class LoadBalancerService
     {
         // Level capacities
-        private const int LEVEL_1_CAPACITY = 500;
-        private const int LEVEL_2_CAPACITY = 3000;
-        private const int LEVEL_3_CAPACITY = 3000;
+        private const int LEVEL_1_CAPACITY = 30;
+        private const int LEVEL_2_CAPACITY = 100;
+        private const int LEVEL_3_CAPACITY = 100;
 
         // Thresholds for determining when to start being selective
-        private const double LEVEL_1_SELECTIVITY_THRESHOLD = 0.6; // 60% utilization
+        private const double LEVEL_1_SELECTIVITY_THRESHOLD = 0.35; // 60% utilization
         private const int ELDERLY_AGE_THRESHOLD = 60; // Age 60+ considered elderly
 
         // Current utilization - using ConcurrentDictionary for thread safety
