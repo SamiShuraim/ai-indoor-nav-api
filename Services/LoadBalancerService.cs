@@ -3,166 +3,339 @@ using ai_indoor_nav_api.Models;
 
 namespace ai_indoor_nav_api.Services
 {
+    /// <summary>
+    /// Adaptive load balancer service that assigns pilgrims to levels based on
+    /// age, disability status, and real-time congestion data.
+    /// Uses a feedback controller with rolling statistics and dynamic age cutoffs.
+    /// </summary>
     public class LoadBalancerService
     {
-        // Level capacities
-        private const int LEVEL_1_CAPACITY = 30;
-        private const int LEVEL_2_CAPACITY = 100;
-        private const int LEVEL_3_CAPACITY = 100;
+        private readonly object _lock = new object();
+        private readonly LoadBalancerConfig _config;
+        private readonly RollingQuantileEstimator _quantileEstimator;
+        private readonly RollingCounts _rollingCounts;
+        private readonly LevelStateManager _levelStateManager;
+        private readonly AdaptiveController _controller;
+        private System.Threading.Timer? _tickTimer;
 
-        // Thresholds for determining when to start being selective
-        private const double LEVEL_1_SELECTIVITY_THRESHOLD = 0.35; // 60% utilization
-        private const int ELDERLY_AGE_THRESHOLD = 60; // Age 60+ considered elderly
-
-        // Current utilization - using ConcurrentDictionary for thread safety
-        private readonly ConcurrentDictionary<int, int> _levelUtilization = new()
+        public LoadBalancerService()
         {
-            [1] = 0,
-            [2] = 0,
-            [3] = 0
-        };
+            _config = new LoadBalancerConfig();
+            _config.Validate();
 
-        public LevelAssignmentResponse AssignLevel(LevelAssignmentRequest request)
+            // Initialize components based on config
+            bool useDecay = _config.WindowMode == "decay";
+            double windowMinutes = _config.SlidingWindowMinutes;
+            double halfLife = _config.HalfLifeMinutes;
+
+            _quantileEstimator = new RollingQuantileEstimator(windowMinutes, useDecay, halfLife);
+            _rollingCounts = new RollingCounts(windowMinutes, useDecay, halfLife);
+            _levelStateManager = new LevelStateManager();
+            _controller = new AdaptiveController(_config, _quantileEstimator, _rollingCounts, _levelStateManager);
+
+            // Start periodic controller tick (every minute)
+            StartPeriodicTick();
+        }
+
+        /// <summary>
+        /// Assigns a pilgrim to a level based on age and disability status.
+        /// </summary>
+        public ArrivalAssignResponse AssignArrival(ArrivalAssignRequest request)
         {
-            int assignedLevel = DetermineLevel(request.Age, request.IsHealthy);
-            
-            // Increment utilization for the assigned level
-            _levelUtilization.AddOrUpdate(assignedLevel, 1, (key, oldValue) => oldValue + 1);
-            
-            int currentUtil = _levelUtilization[assignedLevel];
-            int capacity = GetCapacity(assignedLevel);
-            
-            return new LevelAssignmentResponse
+            lock (_lock)
             {
-                AssignedLevel = assignedLevel,
-                CurrentUtilization = currentUtil,
-                Capacity = capacity,
-                UtilizationPercentage = Math.Round((double)currentUtil / capacity * 100, 2)
+                // Validate age
+                if (request.Age < 0 || request.Age > 120)
+                {
+                    throw new ArgumentException($"Age must be between 0 and 120, got {request.Age}");
+                }
+
+                // Record arrival in rolling statistics
+                _rollingCounts.RecordArrival(request.IsDisabled);
+                
+                // Only track ages for non-disabled pilgrims
+                if (!request.IsDisabled)
+                {
+                    _quantileEstimator.Insert(request.Age);
+                }
+
+                // Route the arrival
+                var (level, reason) = _controller.RouteArrival(request.Age, request.IsDisabled);
+
+                // Get controller state for response
+                var (alpha1, ageCutoff, pDisabled, shareLeftForOld, tau) = _controller.GetControllerState();
+                var waitEst = _levelStateManager.GetAllWaitEstimates();
+
+                // Generate trace ID
+                string traceId = Guid.NewGuid().ToString();
+
+                return new ArrivalAssignResponse
+                {
+                    Level = level,
+                    Decision = new DecisionInfo
+                    {
+                        IsDisabled = request.IsDisabled,
+                        Age = request.Age,
+                        AgeCutoff = ageCutoff == double.NegativeInfinity ? 0 : ageCutoff,
+                        Alpha1 = alpha1,
+                        PDisabled = pDisabled,
+                        ShareLeftForOld = shareLeftForOld,
+                        TauQuantile = tau,
+                        WaitEst = waitEst,
+                        Reason = reason
+                    },
+                    TraceId = traceId
+                };
+            }
+        }
+
+        /// <summary>
+        /// Updates the state of one or more levels (wait times, queue lengths, throughput).
+        /// </summary>
+        public void UpdateLevelState(LevelStateUpdateRequest request)
+        {
+            foreach (var levelState in request.Levels)
+            {
+                _levelStateManager.UpdateLevelState(
+                    levelState.Level,
+                    levelState.WaitEst,
+                    levelState.QueueLen,
+                    levelState.ThroughputPerMin
+                );
+            }
+        }
+
+        /// <summary>
+        /// Manually triggers a controller tick (normally happens automatically every minute).
+        /// </summary>
+        public ControlTickResponse PerformControlTick()
+        {
+            lock (_lock)
+            {
+                _controller.Tick();
+
+                var (alpha1, ageCutoff, pDisabled, _, _) = _controller.GetControllerState();
+
+                return new ControlTickResponse
+                {
+                    Alpha1 = alpha1,
+                    AgeCutoff = ageCutoff == double.NegativeInfinity ? 0 : ageCutoff,
+                    PDisabled = pDisabled,
+                    Window = new WindowInfo
+                    {
+                        Method = _config.WindowMode,
+                        SlidingWindowMinutes = _config.WindowMode == "sliding" ? _config.SlidingWindowMinutes : null,
+                        HalfLifeMin = _config.WindowMode == "decay" ? _config.HalfLifeMinutes : null
+                    }
+                };
+            }
+        }
+
+        /// <summary>
+        /// Gets current metrics and statistics.
+        /// </summary>
+        public MetricsResponse GetMetrics()
+        {
+            lock (_lock)
+            {
+                var (alpha1, ageCutoff, pDisabled, _, _) = _controller.GetControllerState();
+                var (total, disabled, nonDisabled) = _rollingCounts.GetCounts();
+                var waitEst = _levelStateManager.GetAllWaitEstimates();
+
+                var response = new MetricsResponse
+                {
+                    Alpha1 = alpha1,
+                    Alpha1Min = _config.Alpha1Min,
+                    Alpha1Max = _config.Alpha1Max,
+                    WaitTargetMinutes = _config.WaitTargetMinutes,
+                    ControllerGain = _config.ControllerGain,
+                    PDisabled = pDisabled,
+                    AgeCutoff = ageCutoff == double.NegativeInfinity ? 0 : ageCutoff,
+                    Counts = new CountsInfo
+                    {
+                        Total = total,
+                        Disabled = disabled,
+                        NonDisabled = nonDisabled
+                    },
+                    Levels = waitEst.ToDictionary(
+                        kvp => kvp.Key,
+                        kvp => new LevelMetrics { WaitEst = kvp.Value }
+                    )
+                };
+
+                // Add quantiles if we have data
+                if (_quantileEstimator.Count > 0)
+                {
+                    response.QuantilesNonDisabledAge = new Dictionary<string, double>
+                    {
+                        ["q50"] = _quantileEstimator.GetQuantile(0.5),
+                        ["q80"] = _quantileEstimator.GetQuantile(0.8),
+                        ["q90"] = _quantileEstimator.GetQuantile(0.9)
+                    };
+                }
+
+                return response;
+            }
+        }
+
+        /// <summary>
+        /// Updates configuration at runtime.
+        /// </summary>
+        public ConfigResponse UpdateConfig(ConfigUpdateRequest request)
+        {
+            lock (_lock)
+            {
+                if (request.Alpha1.HasValue)
+                    _config.Alpha1 = request.Alpha1.Value;
+                
+                if (request.Alpha1Min.HasValue)
+                    _config.Alpha1Min = request.Alpha1Min.Value;
+                
+                if (request.Alpha1Max.HasValue)
+                    _config.Alpha1Max = request.Alpha1Max.Value;
+                
+                if (request.WaitTargetMinutes.HasValue)
+                    _config.WaitTargetMinutes = request.WaitTargetMinutes.Value;
+                
+                if (request.ControllerGain.HasValue)
+                    _config.ControllerGain = request.ControllerGain.Value;
+
+                if (request.Window != null)
+                {
+                    if (request.Window.Mode != null)
+                        _config.WindowMode = request.Window.Mode;
+                    
+                    if (request.Window.Minutes.HasValue)
+                        _config.SlidingWindowMinutes = request.Window.Minutes.Value;
+                    
+                    if (request.Window.HalfLifeMinutes.HasValue)
+                        _config.HalfLifeMinutes = request.Window.HalfLifeMinutes.Value;
+                }
+
+                if (request.SoftGate != null)
+                {
+                    if (request.SoftGate.Enabled.HasValue)
+                        _config.SoftGateEnabled = request.SoftGate.Enabled.Value;
+                    
+                    if (request.SoftGate.BandYears.HasValue)
+                        _config.SoftGateBandYears = request.SoftGate.BandYears.Value;
+                }
+
+                if (request.Randomization != null)
+                {
+                    if (request.Randomization.Enabled.HasValue)
+                        _config.RandomizationEnabled = request.Randomization.Enabled.Value;
+                    
+                    if (request.Randomization.Rate.HasValue)
+                        _config.RandomizationRate = request.Randomization.Rate.Value;
+                }
+
+                // Validate updated config
+                _config.Validate();
+
+                return GetCurrentConfig();
+            }
+        }
+
+        /// <summary>
+        /// Gets the current configuration.
+        /// </summary>
+        public ConfigResponse GetCurrentConfig()
+        {
+            return new ConfigResponse
+            {
+                Alpha1 = _config.Alpha1,
+                Alpha1Min = _config.Alpha1Min,
+                Alpha1Max = _config.Alpha1Max,
+                WaitTargetMinutes = _config.WaitTargetMinutes,
+                ControllerGain = _config.ControllerGain,
+                Window = new WindowConfig
+                {
+                    Mode = _config.WindowMode,
+                    Minutes = _config.SlidingWindowMinutes,
+                    HalfLifeMinutes = _config.HalfLifeMinutes
+                },
+                SoftGate = new SoftGateConfig
+                {
+                    Enabled = _config.SoftGateEnabled,
+                    BandYears = _config.SoftGateBandYears
+                },
+                Randomization = new RandomizationConfig
+                {
+                    Enabled = _config.RandomizationEnabled,
+                    Rate = _config.RandomizationRate
+                }
             };
         }
 
-        private int DetermineLevel(int age, bool isHealthy)
+        private void StartPeriodicTick()
         {
-            int level1Util = _levelUtilization[1];
-            int level2Util = _levelUtilization[2];
-            int level3Util = _levelUtilization[3];
-            
-            double level1UtilizationRate = (double)level1Util / LEVEL_1_CAPACITY;
-            
-            // Calculate priority score (higher score = higher priority for Level 1)
-            // Factors: age (older = higher), health condition (unhealthy = higher)
-            int priorityScore = CalculatePriorityScore(age, isHealthy);
-            
-            // If Level 1 is below selectivity threshold, assign everyone there
-            if (level1UtilizationRate < LEVEL_1_SELECTIVITY_THRESHOLD)
-            {
-                // Still prefer Level 1 unless it's completely full
-                if (level1Util < LEVEL_1_CAPACITY)
+            // Run controller tick every minute
+            _tickTimer = new System.Threading.Timer(
+                callback: _ =>
                 {
-                    return 1;
-                }
-            }
-            
-            // Level 1 is getting full, be selective
-            // High priority users (elderly, unhealthy) get Level 1
-            if (priorityScore >= 60) // Threshold for high priority
-            {
-                if (level1Util < LEVEL_1_CAPACITY)
-                {
-                    return 1;
-                }
-            }
-            
-            // Medium priority users can go to Level 1 if it's not too full
-            if (priorityScore >= 40 && level1UtilizationRate < 0.8)
-            {
-                if (level1Util < LEVEL_1_CAPACITY)
-                {
-                    return 1;
-                }
-            }
-            
-            // For younger/healthy people, assign to Level 2 or 3
-            // Balance between Level 2 and 3 to distribute load evenly
-            if (level2Util <= level3Util && level2Util < LEVEL_2_CAPACITY)
-            {
-                return 2;
-            }
-            else if (level3Util < LEVEL_3_CAPACITY)
-            {
-                return 3;
-            }
-            else if (level2Util < LEVEL_2_CAPACITY)
-            {
-                return 2;
-            }
-            
-            // If all levels are full, still assign to Level 1 for high priority
-            // Otherwise, overflow to Level 2 or 3
-            if (priorityScore >= 60)
-            {
-                return 1;
-            }
-            
-            return level2Util <= level3Util ? 2 : 3;
+                    try
+                    {
+                        lock (_lock)
+                        {
+                            _controller.Tick();
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        // Log error but don't crash the service
+                        Console.WriteLine($"Error in controller tick: {ex.Message}");
+                    }
+                },
+                state: null,
+                dueTime: TimeSpan.FromMinutes(1),
+                period: TimeSpan.FromMinutes(1)
+            );
         }
 
-        private int CalculatePriorityScore(int age, bool isHealthy)
+        // Legacy methods for backward compatibility (if needed)
+        #region Legacy Support
+        
+        public LevelAssignmentResponse AssignLevel(LevelAssignmentRequest request)
         {
-            int score = 0;
-            
-            // Age component (0-70 points)
-            // Linear scaling: 0 years = 0 points, 100+ years = 70 points
-            score += Math.Min(70, (int)(age * 0.7));
-            
-            // Health component (0-30 points)
-            // Unhealthy adds 30 points
-            if (!isHealthy)
+            // Map old request to new format
+            var newRequest = new ArrivalAssignRequest
             {
-                score += 30;
-            }
-            
-            return score;
-        }
+                Age = request.Age,
+                IsDisabled = !request.IsHealthy // isHealthy -> isDisabled (inverse)
+            };
 
-        private int GetCapacity(int level)
-        {
-            return level switch
+            var response = AssignArrival(newRequest);
+
+            // Map back to old response format (simplified)
+            return new LevelAssignmentResponse
             {
-                1 => LEVEL_1_CAPACITY,
-                2 => LEVEL_2_CAPACITY,
-                3 => LEVEL_3_CAPACITY,
-                _ => throw new ArgumentException($"Invalid level: {level}")
+                AssignedLevel = response.Level,
+                CurrentUtilization = 0, // Not tracked in new system
+                Capacity = 0,
+                UtilizationPercentage = 0
             };
         }
 
         public LevelUtilizationResponse GetUtilization()
         {
-            var response = new LevelUtilizationResponse();
-            
-            foreach (var level in new[] { 1, 2, 3 })
+            // Return empty response as we don't track utilization the same way
+            return new LevelUtilizationResponse
             {
-                int util = _levelUtilization[level];
-                int capacity = GetCapacity(level);
-                
-                response.Levels[level] = new LevelInfo
+                Levels = new Dictionary<int, LevelInfo>
                 {
-                    Level = level,
-                    CurrentUtilization = util,
-                    Capacity = capacity,
-                    UtilizationPercentage = Math.Round((double)util / capacity * 100, 2)
-                };
-            }
-            
-            return response;
+                    [1] = new LevelInfo { Level = 1, CurrentUtilization = 0, Capacity = 0, UtilizationPercentage = 0 },
+                    [2] = new LevelInfo { Level = 2, CurrentUtilization = 0, Capacity = 0, UtilizationPercentage = 0 },
+                    [3] = new LevelInfo { Level = 3, CurrentUtilization = 0, Capacity = 0, UtilizationPercentage = 0 }
+                }
+            };
         }
 
-        // Optional: Method to reset utilization (useful for testing or daily resets)
         public void ResetUtilization()
         {
-            _levelUtilization[1] = 0;
-            _levelUtilization[2] = 0;
-            _levelUtilization[3] = 0;
+            // Not applicable in new system
         }
+
+        #endregion
     }
 }
