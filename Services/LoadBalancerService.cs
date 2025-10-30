@@ -1,46 +1,26 @@
-using System.Collections.Concurrent;
 using ai_indoor_nav_api.Models;
 
 namespace ai_indoor_nav_api.Services
 {
     /// <summary>
-    /// Adaptive load balancer service that assigns pilgrims to levels based on
-    /// age, disability status, and real-time congestion data.
-    /// Uses a feedback controller with rolling statistics and dynamic age cutoffs.
+    /// Simple occupancy-based load balancer.
+    /// Distributes pilgrims across 3 levels to minimize crowding.
+    /// No waiting times - people just walk in, perform ritual for 45 minutes, and leave.
     /// </summary>
     public class LoadBalancerService
     {
         private readonly object _lock = new object();
-        private readonly LoadBalancerConfig _config;
-        private readonly RollingQuantileEstimator _quantileEstimator;
-        private readonly RollingCounts _rollingCounts;
-        private readonly LevelStateManager _levelStateManager;
-        private readonly AdaptiveController _controller;
         private readonly LevelTracker _levelTracker;
-        private System.Threading.Timer? _tickTimer;
+        private readonly LoadBalancerConfig _config;
 
         public LoadBalancerService()
         {
-            _config = new LoadBalancerConfig();
-            _config.Validate();
-
-            // Initialize components based on config
-            bool useDecay = _config.WindowMode == "decay";
-            double windowMinutes = _config.SlidingWindowMinutes;
-            double halfLife = _config.HalfLifeMinutes;
-
-            _quantileEstimator = new RollingQuantileEstimator(windowMinutes, useDecay, halfLife);
-            _rollingCounts = new RollingCounts(windowMinutes, useDecay, halfLife);
-            _levelStateManager = new LevelStateManager();
             _levelTracker = new LevelTracker();
-            _controller = new AdaptiveController(_config, _quantileEstimator, _rollingCounts, _levelStateManager);
-
-            // Start periodic controller tick (every minute)
-            StartPeriodicTick();
+            _config = new LoadBalancerConfig();
         }
 
         /// <summary>
-        /// Assigns a pilgrim to a level based on age and disability status.
+        /// Assigns a pilgrim to a level based on age, disability status, and current occupancy.
         /// </summary>
         public ArrivalAssignResponse AssignArrival(ArrivalAssignRequest request)
         {
@@ -52,144 +32,111 @@ namespace ai_indoor_nav_api.Services
                     throw new ArgumentException($"Age must be between 0 and 120, got {request.Age}");
                 }
 
-                // Record arrival in rolling statistics
-                _rollingCounts.RecordArrival(request.IsDisabled);
-                
-                // Only track ages for non-disabled pilgrims
-                if (!request.IsDisabled)
+                // Get current occupancy at each level
+                var occupancy = _levelTracker.GetAllQueueLengths();
+                int level1Count = occupancy.GetValueOrDefault(1, 0);
+                int level2Count = occupancy.GetValueOrDefault(2, 0);
+                int level3Count = occupancy.GetValueOrDefault(3, 0);
+                int totalCount = level1Count + level2Count + level3Count;
+
+                // Assign level using simple rules
+                int assignedLevel;
+                string reason;
+
+                // Rule 1: Disabled always go to Level 1
+                if (request.IsDisabled)
                 {
-                    _quantileEstimator.Insert(request.Age);
+                    assignedLevel = 1;
+                    reason = "Disabled pilgrims always assigned to Level 1";
+                }
+                // Rule 2: Older people (age >= threshold) prefer Level 1, but avoid overcrowding
+                else if (request.Age >= _config.AgeThreshold)
+                {
+                    // Check if Level 1 is under its target share (default 40% to leave room for spikes)
+                    if (totalCount == 0 || level1Count < totalCount * _config.Level1TargetShare)
+                    {
+                        assignedLevel = 1;
+                        reason = $"Age {request.Age} >= {_config.AgeThreshold}, Level 1 under capacity";
+                    }
+                    else
+                    {
+                        // Level 1 over capacity, redirect to least crowded of 2/3
+                        assignedLevel = level2Count <= level3Count ? 2 : 3;
+                        reason = $"Age {request.Age} >= {_config.AgeThreshold} but Level 1 over capacity, redirected to Level {assignedLevel}";
+                    }
+                }
+                // Rule 3: Younger people go to least crowded of Level 2 or 3
+                else
+                {
+                    assignedLevel = level2Count <= level3Count ? 2 : 3;
+                    reason = $"Age {request.Age} < {_config.AgeThreshold}, assigned to least crowded level";
                 }
 
-                // Route the arrival
-                var (level, reason) = _controller.RouteArrival(request.Age, request.IsDisabled);
+                // Record arrival (pilgrim enters immediately and stays for 45 minutes)
+                _levelTracker.RecordArrival(assignedLevel);
 
-                // Record arrival at the assigned level (pilgrim arrives immediately)
-                _levelTracker.RecordArrival(level);
-
-                // Get controller state for response
-                var (alpha1, ageCutoff, pDisabled, shareLeftForOld, tau) = _controller.GetControllerState();
-                var waitEst = _levelStateManager.GetAllWaitEstimates();
-
-                // Generate trace ID
-                string traceId = Guid.NewGuid().ToString();
+                // Get updated occupancy
+                occupancy = _levelTracker.GetAllQueueLengths();
 
                 return new ArrivalAssignResponse
                 {
-                    Level = level,
+                    Level = assignedLevel,
                     Decision = new DecisionInfo
                     {
                         IsDisabled = request.IsDisabled,
                         Age = request.Age,
-                        AgeCutoff = ageCutoff == double.NegativeInfinity ? 0 : ageCutoff,
-                        Alpha1 = alpha1,
-                        PDisabled = pDisabled,
-                        ShareLeftForOld = shareLeftForOld,
-                        TauQuantile = tau,
-                        WaitEst = waitEst,
+                        AgeCutoff = _config.AgeThreshold,
+                        Alpha1 = 0, // Not used anymore
+                        PDisabled = 0, // Not used anymore
+                        ShareLeftForOld = 0, // Not used anymore
+                        TauQuantile = 0, // Not used anymore
+                        WaitEst = new Dictionary<int, double>
+                        {
+                            [1] = occupancy.GetValueOrDefault(1, 0),
+                            [2] = occupancy.GetValueOrDefault(2, 0),
+                            [3] = occupancy.GetValueOrDefault(3, 0)
+                        },
                         Reason = reason
                     },
-                    TraceId = traceId
+                    TraceId = Guid.NewGuid().ToString()
                 };
             }
         }
 
         /// <summary>
-        /// Updates the state of one or more levels (wait times, queue lengths, throughput).
-        /// </summary>
-        public void UpdateLevelState(LevelStateUpdateRequest request)
-        {
-            foreach (var levelState in request.Levels)
-            {
-                _levelStateManager.UpdateLevelState(
-                    levelState.Level,
-                    levelState.WaitEst,
-                    levelState.QueueLen,
-                    levelState.ThroughputPerMin
-                );
-            }
-        }
-
-        /// <summary>
-        /// Manually triggers a controller tick (normally happens automatically every minute).
-        /// </summary>
-        public ControlTickResponse PerformControlTick()
-        {
-            lock (_lock)
-            {
-                // Update level states from tracker before running controller tick
-                UpdateLevelStatesFromTracker();
-                
-                // Run controller tick
-                _controller.Tick();
-
-                var (alpha1, ageCutoff, pDisabled, _, _) = _controller.GetControllerState();
-
-                return new ControlTickResponse
-                {
-                    Alpha1 = alpha1,
-                    AgeCutoff = ageCutoff == double.NegativeInfinity ? 0 : ageCutoff,
-                    PDisabled = pDisabled,
-                    Window = new WindowInfo
-                    {
-                        Method = _config.WindowMode,
-                        SlidingWindowMinutes = _config.WindowMode == "sliding" ? _config.SlidingWindowMinutes : null,
-                        HalfLifeMin = _config.WindowMode == "decay" ? _config.HalfLifeMinutes : null
-                    }
-                };
-            }
-        }
-
-        /// <summary>
-        /// Gets current metrics and statistics.
+        /// Gets current metrics (occupancy at each level).
         /// </summary>
         public MetricsResponse GetMetrics()
         {
             lock (_lock)
             {
-                var (alpha1, ageCutoff, pDisabled, _, _) = _controller.GetControllerState();
-                var (total, disabled, nonDisabled) = _rollingCounts.GetCounts();
-                var waitEst = _levelStateManager.GetAllWaitEstimates();
-                var levelStats = _levelTracker.GetAllLevelStats();
+                var occupancy = _levelTracker.GetAllQueueLengths();
 
-                var response = new MetricsResponse
+                return new MetricsResponse
                 {
-                    Alpha1 = alpha1,
-                    Alpha1Min = _config.Alpha1Min,
-                    Alpha1Max = _config.Alpha1Max,
-                    WaitTargetMinutes = _config.WaitTargetMinutes,
-                    ControllerGain = _config.ControllerGain,
-                    PDisabled = pDisabled,
-                    AgeCutoff = ageCutoff == double.NegativeInfinity ? 0 : ageCutoff,
+                    Alpha1 = 0, // Not used
+                    Alpha1Min = 0, // Not used
+                    Alpha1Max = 0, // Not used
+                    WaitTargetMinutes = 0, // Not used
+                    ControllerGain = 0, // Not used
+                    PDisabled = 0, // Not used
+                    AgeCutoff = _config.AgeThreshold,
                     Counts = new CountsInfo
                     {
-                        Total = total,
-                        Disabled = disabled,
-                        NonDisabled = nonDisabled
+                        Total = occupancy.Values.Sum(),
+                        Disabled = 0, // Not tracked
+                        NonDisabled = 0 // Not tracked
                     },
-                    Levels = waitEst.ToDictionary(
+                    Levels = occupancy.ToDictionary(
                         kvp => kvp.Key,
-                        kvp => new LevelMetrics 
-                        { 
-                            WaitEst = kvp.Value,
-                            QueueLength = levelStats.ContainsKey(kvp.Key) ? levelStats[kvp.Key].QueueLength : 0,
-                            ThroughputPerMin = levelStats.ContainsKey(kvp.Key) ? levelStats[kvp.Key].ThroughputPerMinute : 0
+                        kvp => new LevelMetrics
+                        {
+                            WaitEst = kvp.Value, // Now represents occupancy count
+                            QueueLength = kvp.Value,
+                            ThroughputPerMin = 0 // Not tracked
                         }
                     )
                 };
-
-                // Add quantiles if we have data
-                if (_quantileEstimator.Count > 0)
-                {
-                    response.QuantilesNonDisabledAge = new Dictionary<string, double>
-                    {
-                        ["q50"] = _quantileEstimator.GetQuantile(0.5),
-                        ["q80"] = _quantileEstimator.GetQuantile(0.8),
-                        ["q90"] = _quantileEstimator.GetQuantile(0.9)
-                    };
-                }
-
-                return response;
             }
         }
 
@@ -200,53 +147,23 @@ namespace ai_indoor_nav_api.Services
         {
             lock (_lock)
             {
-                if (request.Alpha1.HasValue)
-                    _config.Alpha1 = request.Alpha1.Value;
-                
-                if (request.Alpha1Min.HasValue)
-                    _config.Alpha1Min = request.Alpha1Min.Value;
-                
-                if (request.Alpha1Max.HasValue)
-                    _config.Alpha1Max = request.Alpha1Max.Value;
-                
-                if (request.WaitTargetMinutes.HasValue)
-                    _config.WaitTargetMinutes = request.WaitTargetMinutes.Value;
-                
-                if (request.ControllerGain.HasValue)
-                    _config.ControllerGain = request.ControllerGain.Value;
-
-                if (request.Window != null)
+                if (request.AgeThreshold.HasValue)
                 {
-                    if (request.Window.Mode != null)
-                        _config.WindowMode = request.Window.Mode;
-                    
-                    if (request.Window.Minutes.HasValue)
-                        _config.SlidingWindowMinutes = request.Window.Minutes.Value;
-                    
-                    if (request.Window.HalfLifeMinutes.HasValue)
-                        _config.HalfLifeMinutes = request.Window.HalfLifeMinutes.Value;
+                    if (request.AgeThreshold.Value < 0 || request.AgeThreshold.Value > 120)
+                    {
+                        throw new ArgumentException("AgeThreshold must be between 0 and 120");
+                    }
+                    _config.AgeThreshold = request.AgeThreshold.Value;
                 }
 
-                if (request.SoftGate != null)
+                if (request.Level1TargetShare.HasValue)
                 {
-                    if (request.SoftGate.Enabled.HasValue)
-                        _config.SoftGateEnabled = request.SoftGate.Enabled.Value;
-                    
-                    if (request.SoftGate.BandYears.HasValue)
-                        _config.SoftGateBandYears = request.SoftGate.BandYears.Value;
+                    if (request.Level1TargetShare.Value < 0 || request.Level1TargetShare.Value > 1)
+                    {
+                        throw new ArgumentException("Level1TargetShare must be between 0 and 1");
+                    }
+                    _config.Level1TargetShare = request.Level1TargetShare.Value;
                 }
-
-                if (request.Randomization != null)
-                {
-                    if (request.Randomization.Enabled.HasValue)
-                        _config.RandomizationEnabled = request.Randomization.Enabled.Value;
-                    
-                    if (request.Randomization.Rate.HasValue)
-                        _config.RandomizationRate = request.Randomization.Rate.Value;
-                }
-
-                // Validate updated config
-                _config.Validate();
 
                 return GetCurrentConfig();
             }
@@ -259,83 +176,39 @@ namespace ai_indoor_nav_api.Services
         {
             return new ConfigResponse
             {
-                Alpha1 = _config.Alpha1,
-                Alpha1Min = _config.Alpha1Min,
-                Alpha1Max = _config.Alpha1Max,
-                WaitTargetMinutes = _config.WaitTargetMinutes,
-                ControllerGain = _config.ControllerGain,
-                Window = new WindowConfig
-                {
-                    Mode = _config.WindowMode,
-                    Minutes = _config.SlidingWindowMinutes,
-                    HalfLifeMinutes = _config.HalfLifeMinutes
-                },
-                SoftGate = new SoftGateConfig
-                {
-                    Enabled = _config.SoftGateEnabled,
-                    BandYears = _config.SoftGateBandYears
-                },
-                Randomization = new RandomizationConfig
-                {
-                    Enabled = _config.RandomizationEnabled,
-                    Rate = _config.RandomizationRate
-                }
+                AgeThreshold = _config.AgeThreshold,
+                Level1TargetShare = _config.Level1TargetShare,
+                Alpha1 = 0, // Not used
+                Alpha1Min = 0, // Not used
+                Alpha1Max = 0, // Not used
+                WaitTargetMinutes = 0, // Not used
+                ControllerGain = 0, // Not used
+                Window = null, // Not used
+                SoftGate = null, // Not used
+                Randomization = null // Not used
             };
         }
 
-        private void StartPeriodicTick()
+        // These methods are no longer needed but kept for backward compatibility
+        public void UpdateLevelState(LevelStateUpdateRequest request)
         {
-            // Run controller tick every minute
-            _tickTimer = new System.Threading.Timer(
-                callback: _ =>
-                {
-                    try
-                    {
-                        lock (_lock)
-                        {
-                            // Update level states from tracker before running controller tick
-                            UpdateLevelStatesFromTracker();
-                            
-                            // Run controller tick to adjust alpha1 and age cutoff
-                            _controller.Tick();
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        // Log error but don't crash the service
-                        Console.WriteLine($"Error in controller tick: {ex.Message}");
-                    }
-                },
-                state: null,
-                dueTime: TimeSpan.FromMinutes(1),
-                period: TimeSpan.FromMinutes(1)
-            );
+            // No-op: We don't track wait times anymore
         }
 
-        /// <summary>
-        /// Updates the LevelStateManager with current statistics from the LevelTracker.
-        /// This is called automatically during each controller tick.
-        /// </summary>
-        private void UpdateLevelStatesFromTracker()
+        public ControlTickResponse PerformControlTick()
         {
-            var stats = _levelTracker.GetAllLevelStats();
-            foreach (var kvp in stats)
+            // No-op: No controller to tick
+            return new ControlTickResponse
             {
-                int level = kvp.Key;
-                var levelStats = kvp.Value;
-
-                _levelStateManager.UpdateLevelState(
-                    level,
-                    levelStats.EstimatedWaitMinutes,
-                    levelStats.QueueLength,
-                    levelStats.ThroughputPerMinute
-                );
-            }
+                Alpha1 = 0,
+                AgeCutoff = _config.AgeThreshold,
+                PDisabled = 0,
+                Window = null
+            };
         }
 
-        // Legacy methods for backward compatibility (if needed)
         #region Legacy Support
-        
+
         public LevelAssignmentResponse AssignLevel(LevelAssignmentRequest request)
         {
             // Map old request to new format
@@ -347,11 +220,11 @@ namespace ai_indoor_nav_api.Services
 
             var response = AssignArrival(newRequest);
 
-            // Map back to old response format (simplified)
+            // Map back to old response format
             return new LevelAssignmentResponse
             {
                 AssignedLevel = response.Level,
-                CurrentUtilization = 0, // Not tracked in new system
+                CurrentUtilization = 0,
                 Capacity = 0,
                 UtilizationPercentage = 0
             };
@@ -359,21 +232,22 @@ namespace ai_indoor_nav_api.Services
 
         public LevelUtilizationResponse GetUtilization()
         {
-            // Return empty response as we don't track utilization the same way
+            var occupancy = _levelTracker.GetAllQueueLengths();
+            
             return new LevelUtilizationResponse
             {
                 Levels = new Dictionary<int, LevelInfo>
                 {
-                    [1] = new LevelInfo { Level = 1, CurrentUtilization = 0, Capacity = 0, UtilizationPercentage = 0 },
-                    [2] = new LevelInfo { Level = 2, CurrentUtilization = 0, Capacity = 0, UtilizationPercentage = 0 },
-                    [3] = new LevelInfo { Level = 3, CurrentUtilization = 0, Capacity = 0, UtilizationPercentage = 0 }
+                    [1] = new LevelInfo { Level = 1, CurrentUtilization = occupancy.GetValueOrDefault(1, 0), Capacity = 0, UtilizationPercentage = 0 },
+                    [2] = new LevelInfo { Level = 2, CurrentUtilization = occupancy.GetValueOrDefault(2, 0), Capacity = 0, UtilizationPercentage = 0 },
+                    [3] = new LevelInfo { Level = 3, CurrentUtilization = occupancy.GetValueOrDefault(3, 0), Capacity = 0, UtilizationPercentage = 0 }
                 }
             };
         }
 
         public void ResetUtilization()
         {
-            // Not applicable in new system
+            // No-op
         }
 
         #endregion
