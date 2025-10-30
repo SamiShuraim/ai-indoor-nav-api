@@ -124,7 +124,7 @@ namespace ai_indoor_nav_api.Services
                         PDisabled = pDisabled,
                         ShareLeftForOld = shareLeftForOld,
                         TauQuantile = tau,
-                        WaitEst = new Dictionary<int, double>
+                        Occupancy = new Dictionary<int, int>
                         {
                             [1] = occupancy.GetValueOrDefault(1, 0),
                             [2] = occupancy.GetValueOrDefault(2, 0),
@@ -158,8 +158,6 @@ namespace ai_indoor_nav_api.Services
                     Alpha1 = _config.Alpha1,
                     Alpha1Min = _config.Alpha1Min,
                     Alpha1Max = _config.Alpha1Max,
-                    WaitTargetMinutes = 0, // Not used
-                    ControllerGain = 0, // Not used
                     PDisabled = pDisabled,
                     AgeCutoff = ageCutoff == double.NegativeInfinity ? 0 : ageCutoff,
                     Counts = new CountsInfo
@@ -172,9 +170,7 @@ namespace ai_indoor_nav_api.Services
                         kvp => kvp.Key,
                         kvp => new LevelMetrics
                         {
-                            WaitEst = kvp.Value, // Actually occupancy count (kept for backward compatibility)
-                            QueueLength = kvp.Value,
-                            ThroughputPerMin = 0 // Not tracked
+                            Occupancy = kvp.Value
                         }
                     )
                 };
@@ -236,98 +232,17 @@ namespace ai_indoor_nav_api.Services
         {
             return new ConfigResponse
             {
-                AgeThreshold = 0, // Not used - we use dynamic cutoff
-                Level1TargetShare = _config.Alpha1,
                 Alpha1 = _config.Alpha1,
                 Alpha1Min = _config.Alpha1Min,
                 Alpha1Max = _config.Alpha1Max,
-                WaitTargetMinutes = 0, // Not used
-                ControllerGain = 0, // Not used
                 Window = new WindowConfig
                 {
                     Mode = _config.WindowMode,
                     Minutes = _config.SlidingWindowMinutes,
                     HalfLifeMinutes = _config.HalfLifeMinutes
-                },
-                SoftGate = null, // Not used
-                Randomization = null // Not used
-            };
-        }
-
-        // Legacy/no-op methods for backward compatibility
-        public void UpdateLevelState(LevelStateUpdateRequest request)
-        {
-            // No-op: We don't track wait times
-        }
-
-        public ControlTickResponse PerformControlTick()
-        {
-            lock (_lock)
-            {
-                double pDisabled = _rollingCounts.GetPDisabled();
-                double shareLeftForOld = Math.Max(0, _config.Alpha1 - pDisabled);
-                double tau = 1.0 - shareLeftForOld;
-                tau = Math.Max(0, Math.Min(1, tau));
-                double ageCutoff = _quantileEstimator.GetQuantile(tau);
-
-                return new ControlTickResponse
-                {
-                    Alpha1 = _config.Alpha1,
-                    AgeCutoff = ageCutoff == double.NegativeInfinity ? 0 : ageCutoff,
-                    PDisabled = pDisabled,
-                    Window = new WindowInfo
-                    {
-                        Method = _config.WindowMode,
-                        SlidingWindowMinutes = _config.WindowMode == "sliding" ? _config.SlidingWindowMinutes : null,
-                        HalfLifeMin = _config.WindowMode == "decay" ? _config.HalfLifeMinutes : null
-                    }
-                };
-            }
-        }
-
-        #region Legacy Support
-
-        public LevelAssignmentResponse AssignLevel(LevelAssignmentRequest request)
-        {
-            // Map old request to new format
-            var newRequest = new ArrivalAssignRequest
-            {
-                Age = request.Age,
-                IsDisabled = !request.IsHealthy // isHealthy -> isDisabled (inverse)
-            };
-
-            var response = AssignArrival(newRequest);
-
-            // Map back to old response format
-            return new LevelAssignmentResponse
-            {
-                AssignedLevel = response.Level,
-                CurrentUtilization = 0,
-                Capacity = 0,
-                UtilizationPercentage = 0
-            };
-        }
-
-        public LevelUtilizationResponse GetUtilization()
-        {
-            var occupancy = _levelTracker.GetAllQueueLengths();
-            
-            return new LevelUtilizationResponse
-            {
-                Levels = new Dictionary<int, LevelInfo>
-                {
-                    [1] = new LevelInfo { Level = 1, CurrentUtilization = occupancy.GetValueOrDefault(1, 0), Capacity = 0, UtilizationPercentage = 0 },
-                    [2] = new LevelInfo { Level = 2, CurrentUtilization = occupancy.GetValueOrDefault(2, 0), Capacity = 0, UtilizationPercentage = 0 },
-                    [3] = new LevelInfo { Level = 3, CurrentUtilization = occupancy.GetValueOrDefault(3, 0), Capacity = 0, UtilizationPercentage = 0 }
                 }
             };
         }
 
-        public void ResetUtilization()
-        {
-            // No-op
-        }
-
-        #endregion
     }
 }
