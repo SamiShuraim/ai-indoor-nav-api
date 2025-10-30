@@ -16,6 +16,7 @@ namespace ai_indoor_nav_api.Services
         private readonly RollingCounts _rollingCounts;
         private readonly LevelStateManager _levelStateManager;
         private readonly AdaptiveController _controller;
+        private readonly LevelTracker _levelTracker;
         private System.Threading.Timer? _tickTimer;
 
         public LoadBalancerService()
@@ -31,6 +32,7 @@ namespace ai_indoor_nav_api.Services
             _quantileEstimator = new RollingQuantileEstimator(windowMinutes, useDecay, halfLife);
             _rollingCounts = new RollingCounts(windowMinutes, useDecay, halfLife);
             _levelStateManager = new LevelStateManager();
+            _levelTracker = new LevelTracker();
             _controller = new AdaptiveController(_config, _quantileEstimator, _rollingCounts, _levelStateManager);
 
             // Start periodic controller tick (every minute)
@@ -61,6 +63,9 @@ namespace ai_indoor_nav_api.Services
 
                 // Route the arrival
                 var (level, reason) = _controller.RouteArrival(request.Age, request.IsDisabled);
+
+                // Record arrival at the assigned level (pilgrim arrives immediately)
+                _levelTracker.RecordArrival(level);
 
                 // Get controller state for response
                 var (alpha1, ageCutoff, pDisabled, shareLeftForOld, tau) = _controller.GetControllerState();
@@ -112,6 +117,10 @@ namespace ai_indoor_nav_api.Services
         {
             lock (_lock)
             {
+                // Update level states from tracker before running controller tick
+                UpdateLevelStatesFromTracker();
+                
+                // Run controller tick
                 _controller.Tick();
 
                 var (alpha1, ageCutoff, pDisabled, _, _) = _controller.GetControllerState();
@@ -141,6 +150,7 @@ namespace ai_indoor_nav_api.Services
                 var (alpha1, ageCutoff, pDisabled, _, _) = _controller.GetControllerState();
                 var (total, disabled, nonDisabled) = _rollingCounts.GetCounts();
                 var waitEst = _levelStateManager.GetAllWaitEstimates();
+                var levelStats = _levelTracker.GetAllLevelStats();
 
                 var response = new MetricsResponse
                 {
@@ -159,7 +169,12 @@ namespace ai_indoor_nav_api.Services
                     },
                     Levels = waitEst.ToDictionary(
                         kvp => kvp.Key,
-                        kvp => new LevelMetrics { WaitEst = kvp.Value }
+                        kvp => new LevelMetrics 
+                        { 
+                            WaitEst = kvp.Value,
+                            QueueLength = levelStats.ContainsKey(kvp.Key) ? levelStats[kvp.Key].QueueLength : 0,
+                            ThroughputPerMin = levelStats.ContainsKey(kvp.Key) ? levelStats[kvp.Key].ThroughputPerMinute : 0
+                        }
                     )
                 };
 
@@ -278,6 +293,10 @@ namespace ai_indoor_nav_api.Services
                     {
                         lock (_lock)
                         {
+                            // Update level states from tracker before running controller tick
+                            UpdateLevelStatesFromTracker();
+                            
+                            // Run controller tick to adjust alpha1 and age cutoff
                             _controller.Tick();
                         }
                     }
@@ -291,6 +310,27 @@ namespace ai_indoor_nav_api.Services
                 dueTime: TimeSpan.FromMinutes(1),
                 period: TimeSpan.FromMinutes(1)
             );
+        }
+
+        /// <summary>
+        /// Updates the LevelStateManager with current statistics from the LevelTracker.
+        /// This is called automatically during each controller tick.
+        /// </summary>
+        private void UpdateLevelStatesFromTracker()
+        {
+            var stats = _levelTracker.GetAllLevelStats();
+            foreach (var kvp in stats)
+            {
+                int level = kvp.Key;
+                var levelStats = kvp.Value;
+
+                _levelStateManager.UpdateLevelState(
+                    level,
+                    levelStats.EstimatedWaitMinutes,
+                    levelStats.QueueLength,
+                    levelStats.ThroughputPerMinute
+                );
+            }
         }
 
         // Legacy methods for backward compatibility (if needed)

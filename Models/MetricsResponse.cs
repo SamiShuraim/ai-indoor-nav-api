@@ -24,5 +24,7 @@ namespace ai_indoor_nav_api.Models
     public class LevelMetrics
     {
         public double WaitEst { get; set; }
+        public int QueueLength { get; set; }
+        public double ThroughputPerMin { get; set; }
     }
 }

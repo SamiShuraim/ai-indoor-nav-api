@@ -27,6 +27,7 @@ builder.Services.AddControllers(options =>
         opts.SerializerSettings.Converters.Add(new FeatureJsonConverter());
         opts.SerializerSettings.Converters.Add(new GeometryConverter());
         opts.SerializerSettings.NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore;
+        opts.SerializerSettings.ContractResolver = new Newtonsoft.Json.Serialization.CamelCasePropertyNamesContractResolver();
     });
 
 
