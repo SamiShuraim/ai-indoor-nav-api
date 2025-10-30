@@ -3,24 +3,36 @@ using ai_indoor_nav_api.Models;
 namespace ai_indoor_nav_api.Services
 {
     /// <summary>
-    /// Simple occupancy-based load balancer.
-    /// Distributes pilgrims across 3 levels to minimize crowding.
-    /// No waiting times - people just walk in, perform ritual for 45 minutes, and leave.
+    /// Quantile-based occupancy load balancer.
+    /// Uses dynamic age cutoffs computed from the distribution of recent arrivals.
+    /// NO wait times - just occupancy tracking and distribution to minimize crowding.
     /// </summary>
     public class LoadBalancerService
     {
         private readonly object _lock = new object();
-        private readonly LevelTracker _levelTracker;
         private readonly LoadBalancerConfig _config;
+        private readonly RollingQuantileEstimator _quantileEstimator;
+        private readonly RollingCounts _rollingCounts;
+        private readonly LevelTracker _levelTracker;
 
         public LoadBalancerService()
         {
-            _levelTracker = new LevelTracker();
             _config = new LoadBalancerConfig();
+            _config.Validate();
+
+            // Initialize components based on config
+            bool useDecay = _config.WindowMode == "decay";
+            double windowMinutes = _config.SlidingWindowMinutes;
+            double halfLife = _config.HalfLifeMinutes;
+
+            _quantileEstimator = new RollingQuantileEstimator(windowMinutes, useDecay, halfLife);
+            _rollingCounts = new RollingCounts(windowMinutes, useDecay, halfLife);
+            _levelTracker = new LevelTracker();
         }
 
         /// <summary>
-        /// Assigns a pilgrim to a level based on age, disability status, and current occupancy.
+        /// Assigns a pilgrim to a level based on age, disability status, and dynamic age cutoff.
+        /// The age cutoff is computed from quantiles of recent arrivals.
         /// </summary>
         public ArrivalAssignResponse AssignArrival(ArrivalAssignRequest request)
         {
@@ -32,14 +44,29 @@ namespace ai_indoor_nav_api.Services
                     throw new ArgumentException($"Age must be between 0 and 120, got {request.Age}");
                 }
 
+                // Record arrival in rolling statistics
+                _rollingCounts.RecordArrival(request.IsDisabled);
+                
+                // Only track ages for non-disabled pilgrims (for quantile calculation)
+                if (!request.IsDisabled)
+                {
+                    _quantileEstimator.Insert(request.Age);
+                }
+
                 // Get current occupancy at each level
                 var occupancy = _levelTracker.GetAllQueueLengths();
                 int level1Count = occupancy.GetValueOrDefault(1, 0);
                 int level2Count = occupancy.GetValueOrDefault(2, 0);
                 int level3Count = occupancy.GetValueOrDefault(3, 0);
-                int totalCount = level1Count + level2Count + level3Count;
 
-                // Assign level using simple rules
+                // Compute dynamic age cutoff
+                double pDisabled = _rollingCounts.GetPDisabled();
+                double shareLeftForOld = Math.Max(0, _config.Alpha1 - pDisabled);
+                double tau = 1.0 - shareLeftForOld;
+                tau = Math.Max(0, Math.Min(1, tau));
+                double ageCutoff = _quantileEstimator.GetQuantile(tau);
+
+                // Assign level using dynamic cutoff
                 int assignedLevel;
                 string reason;
 
@@ -47,29 +74,33 @@ namespace ai_indoor_nav_api.Services
                 if (request.IsDisabled)
                 {
                     assignedLevel = 1;
-                    reason = "Disabled pilgrims always assigned to Level 1";
+                    reason = "Disabled pilgrim prioritized for Level 1";
                 }
-                // Rule 2: Older people (age >= threshold) prefer Level 1, but avoid overcrowding
-                else if (request.Age >= _config.AgeThreshold)
+                // Rule 2: Age >= dynamic cutoff goes to Level 1 (but check occupancy to avoid extreme crowding)
+                else if (ageCutoff != double.NegativeInfinity && request.Age >= ageCutoff)
                 {
-                    // Check if Level 1 is under its target share (default 40% to leave room for spikes)
-                    if (totalCount == 0 || level1Count < totalCount * _config.Level1TargetShare)
+                    // Check if Level 1 is severely overcrowded compared to others
+                    int avgOthers = (level2Count + level3Count) / 2;
+                    bool level1Overcrowded = level1Count > avgOthers * 1.5 && level1Count > 20; // 50% more crowded AND has significant people
+                    
+                    if (level1Overcrowded)
                     {
-                        assignedLevel = 1;
-                        reason = $"Age {request.Age} >= {_config.AgeThreshold}, Level 1 under capacity";
+                        assignedLevel = level2Count <= level3Count ? 2 : 3;
+                        reason = $"Age {request.Age} >= cutoff ({ageCutoff:F1}), but Level 1 severely overcrowded; redirected to Level {assignedLevel}";
                     }
                     else
                     {
-                        // Level 1 over capacity, redirect to least crowded of 2/3
-                        assignedLevel = level2Count <= level3Count ? 2 : 3;
-                        reason = $"Age {request.Age} >= {_config.AgeThreshold} but Level 1 over capacity, redirected to Level {assignedLevel}";
+                        assignedLevel = 1;
+                        reason = $"Age {request.Age} >= dynamic cutoff ({ageCutoff:F1})";
                     }
                 }
-                // Rule 3: Younger people go to least crowded of Level 2 or 3
+                // Rule 3: Below cutoff goes to less crowded of Level 2/3
                 else
                 {
                     assignedLevel = level2Count <= level3Count ? 2 : 3;
-                    reason = $"Age {request.Age} < {_config.AgeThreshold}, assigned to least crowded level";
+                    reason = ageCutoff == double.NegativeInfinity 
+                        ? "No age history yet; non-disabled assigned to less crowded level"
+                        : $"Age {request.Age} < cutoff ({ageCutoff:F1}); assigned to less crowded level";
                 }
 
                 // Record arrival (pilgrim enters immediately and stays for 45 minutes)
@@ -78,6 +109,9 @@ namespace ai_indoor_nav_api.Services
                 // Get updated occupancy
                 occupancy = _levelTracker.GetAllQueueLengths();
 
+                // Generate trace ID
+                string traceId = Guid.NewGuid().ToString();
+
                 return new ArrivalAssignResponse
                 {
                     Level = assignedLevel,
@@ -85,11 +119,11 @@ namespace ai_indoor_nav_api.Services
                     {
                         IsDisabled = request.IsDisabled,
                         Age = request.Age,
-                        AgeCutoff = _config.AgeThreshold,
-                        Alpha1 = 0, // Not used anymore
-                        PDisabled = 0, // Not used anymore
-                        ShareLeftForOld = 0, // Not used anymore
-                        TauQuantile = 0, // Not used anymore
+                        AgeCutoff = ageCutoff == double.NegativeInfinity ? 0 : ageCutoff,
+                        Alpha1 = _config.Alpha1,
+                        PDisabled = pDisabled,
+                        ShareLeftForOld = shareLeftForOld,
+                        TauQuantile = tau,
                         WaitEst = new Dictionary<int, double>
                         {
                             [1] = occupancy.GetValueOrDefault(1, 0),
@@ -98,45 +132,65 @@ namespace ai_indoor_nav_api.Services
                         },
                         Reason = reason
                     },
-                    TraceId = Guid.NewGuid().ToString()
+                    TraceId = traceId
                 };
             }
         }
 
         /// <summary>
-        /// Gets current metrics (occupancy at each level).
+        /// Gets current metrics including occupancy and dynamic age cutoff.
         /// </summary>
         public MetricsResponse GetMetrics()
         {
             lock (_lock)
             {
                 var occupancy = _levelTracker.GetAllQueueLengths();
+                var (total, disabled, nonDisabled) = _rollingCounts.GetCounts();
+                double pDisabled = _rollingCounts.GetPDisabled();
+                
+                double shareLeftForOld = Math.Max(0, _config.Alpha1 - pDisabled);
+                double tau = 1.0 - shareLeftForOld;
+                tau = Math.Max(0, Math.Min(1, tau));
+                double ageCutoff = _quantileEstimator.GetQuantile(tau);
 
-                return new MetricsResponse
+                var response = new MetricsResponse
                 {
-                    Alpha1 = 0, // Not used
-                    Alpha1Min = 0, // Not used
-                    Alpha1Max = 0, // Not used
+                    Alpha1 = _config.Alpha1,
+                    Alpha1Min = _config.Alpha1Min,
+                    Alpha1Max = _config.Alpha1Max,
                     WaitTargetMinutes = 0, // Not used
                     ControllerGain = 0, // Not used
-                    PDisabled = 0, // Not used
-                    AgeCutoff = _config.AgeThreshold,
+                    PDisabled = pDisabled,
+                    AgeCutoff = ageCutoff == double.NegativeInfinity ? 0 : ageCutoff,
                     Counts = new CountsInfo
                     {
-                        Total = occupancy.Values.Sum(),
-                        Disabled = 0, // Not tracked
-                        NonDisabled = 0 // Not tracked
+                        Total = total,
+                        Disabled = disabled,
+                        NonDisabled = nonDisabled
                     },
                     Levels = occupancy.ToDictionary(
                         kvp => kvp.Key,
                         kvp => new LevelMetrics
                         {
-                            WaitEst = kvp.Value, // Now represents occupancy count
+                            WaitEst = kvp.Value, // Actually occupancy count (kept for backward compatibility)
                             QueueLength = kvp.Value,
                             ThroughputPerMin = 0 // Not tracked
                         }
                     )
                 };
+
+                // Add quantiles if we have data
+                if (_quantileEstimator.Count > 0)
+                {
+                    response.QuantilesNonDisabledAge = new Dictionary<string, double>
+                    {
+                        ["q50"] = _quantileEstimator.GetQuantile(0.5),
+                        ["q80"] = _quantileEstimator.GetQuantile(0.8),
+                        ["q90"] = _quantileEstimator.GetQuantile(0.9)
+                    };
+                }
+
+                return response;
             }
         }
 
@@ -147,23 +201,29 @@ namespace ai_indoor_nav_api.Services
         {
             lock (_lock)
             {
-                if (request.AgeThreshold.HasValue)
+                if (request.Alpha1.HasValue)
+                    _config.Alpha1 = request.Alpha1.Value;
+                
+                if (request.Alpha1Min.HasValue)
+                    _config.Alpha1Min = request.Alpha1Min.Value;
+                
+                if (request.Alpha1Max.HasValue)
+                    _config.Alpha1Max = request.Alpha1Max.Value;
+
+                if (request.Window != null)
                 {
-                    if (request.AgeThreshold.Value < 0 || request.AgeThreshold.Value > 120)
-                    {
-                        throw new ArgumentException("AgeThreshold must be between 0 and 120");
-                    }
-                    _config.AgeThreshold = request.AgeThreshold.Value;
+                    if (request.Window.Mode != null)
+                        _config.WindowMode = request.Window.Mode;
+                    
+                    if (request.Window.Minutes.HasValue)
+                        _config.SlidingWindowMinutes = request.Window.Minutes.Value;
+                    
+                    if (request.Window.HalfLifeMinutes.HasValue)
+                        _config.HalfLifeMinutes = request.Window.HalfLifeMinutes.Value;
                 }
 
-                if (request.Level1TargetShare.HasValue)
-                {
-                    if (request.Level1TargetShare.Value < 0 || request.Level1TargetShare.Value > 1)
-                    {
-                        throw new ArgumentException("Level1TargetShare must be between 0 and 1");
-                    }
-                    _config.Level1TargetShare = request.Level1TargetShare.Value;
-                }
+                // Validate updated config
+                _config.Validate();
 
                 return GetCurrentConfig();
             }
@@ -176,35 +236,53 @@ namespace ai_indoor_nav_api.Services
         {
             return new ConfigResponse
             {
-                AgeThreshold = _config.AgeThreshold,
-                Level1TargetShare = _config.Level1TargetShare,
-                Alpha1 = 0, // Not used
-                Alpha1Min = 0, // Not used
-                Alpha1Max = 0, // Not used
+                AgeThreshold = 0, // Not used - we use dynamic cutoff
+                Level1TargetShare = _config.Alpha1,
+                Alpha1 = _config.Alpha1,
+                Alpha1Min = _config.Alpha1Min,
+                Alpha1Max = _config.Alpha1Max,
                 WaitTargetMinutes = 0, // Not used
                 ControllerGain = 0, // Not used
-                Window = null, // Not used
+                Window = new WindowConfig
+                {
+                    Mode = _config.WindowMode,
+                    Minutes = _config.SlidingWindowMinutes,
+                    HalfLifeMinutes = _config.HalfLifeMinutes
+                },
                 SoftGate = null, // Not used
                 Randomization = null // Not used
             };
         }
 
-        // These methods are no longer needed but kept for backward compatibility
+        // Legacy/no-op methods for backward compatibility
         public void UpdateLevelState(LevelStateUpdateRequest request)
         {
-            // No-op: We don't track wait times anymore
+            // No-op: We don't track wait times
         }
 
         public ControlTickResponse PerformControlTick()
         {
-            // No-op: No controller to tick
-            return new ControlTickResponse
+            lock (_lock)
             {
-                Alpha1 = 0,
-                AgeCutoff = _config.AgeThreshold,
-                PDisabled = 0,
-                Window = null
-            };
+                double pDisabled = _rollingCounts.GetPDisabled();
+                double shareLeftForOld = Math.Max(0, _config.Alpha1 - pDisabled);
+                double tau = 1.0 - shareLeftForOld;
+                tau = Math.Max(0, Math.Min(1, tau));
+                double ageCutoff = _quantileEstimator.GetQuantile(tau);
+
+                return new ControlTickResponse
+                {
+                    Alpha1 = _config.Alpha1,
+                    AgeCutoff = ageCutoff == double.NegativeInfinity ? 0 : ageCutoff,
+                    PDisabled = pDisabled,
+                    Window = new WindowInfo
+                    {
+                        Method = _config.WindowMode,
+                        SlidingWindowMinutes = _config.WindowMode == "sliding" ? _config.SlidingWindowMinutes : null,
+                        HalfLifeMin = _config.WindowMode == "decay" ? _config.HalfLifeMinutes : null
+                    }
+                };
+            }
         }
 
         #region Legacy Support
