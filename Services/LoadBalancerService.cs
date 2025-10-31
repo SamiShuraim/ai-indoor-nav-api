@@ -3,114 +3,169 @@ using ai_indoor_nav_api.Models;
 namespace ai_indoor_nav_api.Services
 {
     /// <summary>
-    /// Quantile-based occupancy load balancer.
-    /// Uses dynamic age cutoffs computed from the distribution of recent arrivals.
-    /// NO wait times - just occupancy tracking and distribution to minimize crowding.
+    /// Capacity-based adaptive load balancer with dynamic age cutoff, 
+    /// utilization-based feedback controller, and sigmoid soft gate.
     /// </summary>
     public class LoadBalancerService
     {
         private readonly object _lock = new object();
         private readonly LoadBalancerConfig _config;
+        private readonly AssignmentLog _assignmentLog;
         private readonly RollingQuantileEstimator _quantileEstimator;
         private readonly RollingCounts _rollingCounts;
-        private readonly LevelTracker _levelTracker;
+        private readonly RateLimiter _rateLimiter;
+        private readonly Random _random;
+        private System.Threading.Timer? _tickTimer;
+
+        private double _alpha1; // Current target share for L1
+        private double _alpha1Hat; // Actual recent share to L1
+        private double _ageCutoff;
 
         public LoadBalancerService()
         {
             _config = new LoadBalancerConfig();
             _config.Validate();
 
-            // Initialize components based on config
-            bool useDecay = _config.WindowMode == "decay";
-            double windowMinutes = _config.SlidingWindowMinutes;
-            double halfLife = _config.HalfLifeMinutes;
+            _assignmentLog = new AssignmentLog(_config.DwellMinutes, _config.TtlBufferMinutes);
+            _quantileEstimator = new RollingQuantileEstimator(_config.SlidingWindowMinutes, useDecay: false, halfLifeMinutes: 45);
+            _rollingCounts = new RollingCounts(_config.SlidingWindowMinutes, useDecay: false, halfLifeMinutes: 45);
+            _rateLimiter = new RateLimiter();
+            _random = new Random(42); // Seeded for reproducibility
 
-            _quantileEstimator = new RollingQuantileEstimator(windowMinutes, useDecay, halfLife);
-            _rollingCounts = new RollingCounts(windowMinutes, useDecay, halfLife);
-            _levelTracker = new LevelTracker();
+            _alpha1 = _config.TargetAlpha1;
+            _alpha1Hat = 0.0;
+            _ageCutoff = double.PositiveInfinity;
+
+            // Run controller tick every minute
+            StartPeriodicTick();
+            
+            // Run initial tick
+            ControllerTick();
         }
 
         /// <summary>
-        /// Assigns a pilgrim to a level based on age, disability status, and dynamic age cutoff.
-        /// The age cutoff is computed from quantiles of recent arrivals.
+        /// Assigns a pilgrim to a level using capacity-based logic with soft gate.
         /// </summary>
         public ArrivalAssignResponse AssignArrival(ArrivalAssignRequest request)
         {
             lock (_lock)
             {
+                var now = DateTime.UtcNow;
+                
                 // Validate age
                 if (request.Age < 0 || request.Age > 120)
                 {
                     throw new ArgumentException($"Age must be between 0 and 120, got {request.Age}");
                 }
 
-                // Record arrival in rolling statistics
-                _rollingCounts.RecordArrival(request.IsDisabled);
+                // Evict expired assignments
+                _assignmentLog.EvictExpired(now);
+
+                // Get current active counts
+                var active = _assignmentLog.GetActiveCounts();
+                int active1 = active[1];
+                int active2 = active[2];
+                int active3 = active[3];
+
+                // Get rate limit remaining
+                int rateLimitRemaining = _rateLimiter.GetRemaining(now, _config.L1RateLimitPerMin);
+
+                int assignedLevel;
+                string reason;
+                double pL1 = 0.0;
+
+                // === CASE 1: DISABLED ===
+                if (request.IsDisabled)
+                {
+                    if (active1 < _config.L1CapHard && rateLimitRemaining > 0)
+                    {
+                        assignedLevel = 1;
+                        reason = "disabled priority";
+                        
+                        if (!_rateLimiter.TryAdmit(now, _config.L1RateLimitPerMin))
+                        {
+                            // Should not happen since we checked remaining, but safety check
+                            assignedLevel = GetLessFullLevel(active2, active3);
+                            reason = "disabled overflow (rate limit)";
+                        }
+                    }
+                    else
+                    {
+                        assignedLevel = GetLessFullLevel(active2, active3);
+                        reason = active1 >= _config.L1CapHard ? "disabled overflow (hard cap)" : "disabled overflow (rate limit)";
+                    }
+                }
+                // === CASE 2: NON-DISABLED ===
+                else
+                {
+                    // Check if L1 is at capacity or rate limited
+                    if (active1 >= _config.L1CapSoft || rateLimitRemaining == 0)
+                    {
+                        assignedLevel = GetLessFullLevel(active2, active3);
+                        reason = active1 >= _config.L1CapSoft ? "L1 capacity guard" : "L1 rate guard";
+                    }
+                    // Check if we have age history
+                    else if (_ageCutoff == double.PositiveInfinity)
+                    {
+                        assignedLevel = GetLessFullLevel(active2, active3);
+                        reason = "no non-disabled history";
+                    }
+                    // Apply soft gate
+                    else
+                    {
+                        pL1 = ComputeSoftGateProbability(request.Age);
+                        
+                        // Draw random number
+                        double r = _random.NextDouble();
+                        
+                        if (r < pL1)
+                        {
+                            // Propose L1
+                            if (active1 < _config.L1CapSoft && rateLimitRemaining > 0)
+                            {
+                                assignedLevel = 1;
+                                reason = $"soft-gate pass (p={pL1:F3}, r={r:F3})";
+                                
+                                if (!_rateLimiter.TryAdmit(now, _config.L1RateLimitPerMin))
+                                {
+                                    assignedLevel = GetLessFullLevel(active2, active3);
+                                    reason = $"soft-gate pass but rate limited";
+                                }
+                            }
+                            else
+                            {
+                                assignedLevel = GetLessFullLevel(active2, active3);
+                                reason = $"soft-gate pass but L1 full";
+                            }
+                        }
+                        else
+                        {
+                            // Propose L2/L3
+                            assignedLevel = GetLessFullLevel(active2, active3);
+                            reason = $"soft-gate reject (p={pL1:F3}, r={r:F3})";
+                        }
+                    }
+                }
+
+                // Record assignment
+                _assignmentLog.Add(assignedLevel, request.Age, request.IsDisabled, now);
                 
-                // Only track ages for non-disabled pilgrims (for quantile calculation)
+                // Update rolling statistics
+                _rollingCounts.RecordArrival(request.IsDisabled);
                 if (!request.IsDisabled)
                 {
                     _quantileEstimator.Insert(request.Age);
                 }
 
-                // Get current occupancy at each level
-                var occupancy = _levelTracker.GetAllQueueLengths();
-                int level1Count = occupancy.GetValueOrDefault(1, 0);
-                int level2Count = occupancy.GetValueOrDefault(2, 0);
-                int level3Count = occupancy.GetValueOrDefault(3, 0);
+                // Update alpha1_hat (recent share)
+                UpdateAlpha1Hat(now);
 
-                // Compute dynamic age cutoff
+                // Get updated active counts
+                active = _assignmentLog.GetActiveCounts();
+
+                // Get current stats for response
                 double pDisabled = _rollingCounts.GetPDisabled();
-                double shareLeftForOld = Math.Max(0, _config.Alpha1 - pDisabled);
-                double tau = 1.0 - shareLeftForOld;
-                tau = Math.Max(0, Math.Min(1, tau));
-                double ageCutoff = _quantileEstimator.GetQuantile(tau);
-
-                // Assign level using dynamic cutoff
-                int assignedLevel;
-                string reason;
-
-                // Rule 1: Disabled always go to Level 1
-                if (request.IsDisabled)
-                {
-                    assignedLevel = 1;
-                    reason = "Disabled pilgrim prioritized for Level 1";
-                }
-                // Rule 2: Age >= dynamic cutoff goes to Level 1 (but check occupancy to avoid extreme crowding)
-                else if (ageCutoff != double.NegativeInfinity && request.Age >= ageCutoff)
-                {
-                    // Check if Level 1 is severely overcrowded compared to others
-                    int avgOthers = (level2Count + level3Count) / 2;
-                    bool level1Overcrowded = level1Count > avgOthers * 1.5 && level1Count > 20; // 50% more crowded AND has significant people
-                    
-                    if (level1Overcrowded)
-                    {
-                        assignedLevel = level2Count <= level3Count ? 2 : 3;
-                        reason = $"Age {request.Age} >= cutoff ({ageCutoff:F1}), but Level 1 severely overcrowded; redirected to Level {assignedLevel}";
-                    }
-                    else
-                    {
-                        assignedLevel = 1;
-                        reason = $"Age {request.Age} >= dynamic cutoff ({ageCutoff:F1})";
-                    }
-                }
-                // Rule 3: Below cutoff goes to less crowded of Level 2/3
-                else
-                {
-                    assignedLevel = level2Count <= level3Count ? 2 : 3;
-                    reason = ageCutoff == double.NegativeInfinity 
-                        ? "No age history yet; non-disabled assigned to less crowded level"
-                        : $"Age {request.Age} < cutoff ({ageCutoff:F1}); assigned to less crowded level";
-                }
-
-                // Record arrival (pilgrim enters immediately and stays for 45 minutes)
-                _levelTracker.RecordArrival(assignedLevel);
-
-                // Get updated occupancy
-                occupancy = _levelTracker.GetAllQueueLengths();
-
-                // Generate trace ID
-                string traceId = Guid.NewGuid().ToString();
+                var (_, disabled, nonDisabled) = _rollingCounts.GetCounts();
 
                 return new ArrivalAssignResponse
                 {
@@ -119,54 +174,168 @@ namespace ai_indoor_nav_api.Services
                     {
                         IsDisabled = request.IsDisabled,
                         Age = request.Age,
-                        AgeCutoff = ageCutoff == double.NegativeInfinity ? 0 : ageCutoff,
-                        Alpha1 = _config.Alpha1,
+                        AgeCutoff = _ageCutoff == double.PositiveInfinity ? 0 : _ageCutoff,
+                        Alpha1 = _alpha1,
                         PDisabled = pDisabled,
-                        ShareLeftForOld = shareLeftForOld,
-                        TauQuantile = tau,
+                        ShareLeftForOld = Math.Max(0, _alpha1 - pDisabled),
+                        TauQuantile = _ageCutoff == double.PositiveInfinity ? 0 : (1.0 - Math.Max(0, _alpha1 - pDisabled)),
                         Occupancy = new Dictionary<int, int>
                         {
-                            [1] = occupancy.GetValueOrDefault(1, 0),
-                            [2] = occupancy.GetValueOrDefault(2, 0),
-                            [3] = occupancy.GetValueOrDefault(3, 0)
+                            [1] = active[1],
+                            [2] = active[2],
+                            [3] = active[3]
                         },
                         Reason = reason
                     },
-                    TraceId = traceId
+                    TraceId = Guid.NewGuid().ToString()
                 };
             }
         }
 
         /// <summary>
-        /// Gets current metrics including occupancy and dynamic age cutoff.
+        /// Computes soft gate probability using sigmoid function.
+        /// </summary>
+        private double ComputeSoftGateProbability(int age)
+        {
+            if (!_config.SoftGateEnabled)
+            {
+                return age >= _ageCutoff ? 1.0 : 0.0;
+            }
+
+            double gamma = _config.SoftGateBandYears;
+            
+            // Deterministic zones
+            if (age >= _ageCutoff + 2 * gamma)
+            {
+                return 1.0;
+            }
+            if (age <= _ageCutoff - 2 * gamma)
+            {
+                return 0.0;
+            }
+
+            // Sigmoid in the band
+            double z = (age - _ageCutoff) / gamma;
+            double sigmoid = 1.0 / (1.0 + Math.Exp(-z));
+            double p = Math.Max(_config.SoftGateFloor, Math.Min(_config.SoftGateCeiling, sigmoid));
+
+            // Guard against overshooting recent share
+            if (_alpha1Hat > _alpha1 + _config.RecentShareGuard)
+            {
+                p = Math.Min(p, 0.10); // Only clearly-older can slip in
+            }
+
+            return p;
+        }
+
+        /// <summary>
+        /// Returns the less full level between L2 and L3.
+        /// </summary>
+        private int GetLessFullLevel(int active2, int active3)
+        {
+            return active2 <= active3 ? 2 : 3;
+        }
+
+        /// <summary>
+        /// Updates alpha1_hat (recent share to L1) over the recent window.
+        /// </summary>
+        private void UpdateAlpha1Hat(DateTime now)
+        {
+            var recentAssignments = _assignmentLog.GetRecentAssignments(now, _config.RecentShareWindowMinutes);
+            if (recentAssignments.Count == 0)
+            {
+                _alpha1Hat = 0.0;
+                return;
+            }
+
+            int l1Count = recentAssignments.Count(a => a.Level == 1);
+            _alpha1Hat = (double)l1Count / recentAssignments.Count;
+        }
+
+        /// <summary>
+        /// Controller tick: adjusts alpha1 based on L1 utilization.
+        /// </summary>
+        private void ControllerTick()
+        {
+            lock (_lock)
+            {
+                var now = DateTime.UtcNow;
+                
+                // Evict expired assignments
+                _assignmentLog.EvictExpired(now);
+
+                // Get active counts
+                var active = _assignmentLog.GetActiveCounts();
+                int active1 = active[1];
+
+                // Compute L1 utilization
+                double util = (double)active1 / _config.L1CapSoft;
+
+                // Feedback controller
+                double error = _config.TargetUtilL1 - util;
+                _alpha1 = _alpha1 + _config.ControllerGain * error;
+
+                // Clamp alpha1
+                double pDisabled = _rollingCounts.GetPDisabled();
+                double lowerBound = Math.Max(_config.Alpha1Min, pDisabled);
+                _alpha1 = Math.Max(lowerBound, Math.Min(_config.Alpha1Max, _alpha1));
+
+                // Compute share left for old
+                double shareLeftForOld = Math.Max(0, _alpha1 - pDisabled);
+                double tau = 1.0 - shareLeftForOld;
+                tau = Math.Max(0, Math.Min(1, tau));
+
+                // Compute age cutoff
+                var (_, _, nonDisabled) = _rollingCounts.GetCounts();
+                if (nonDisabled == 0)
+                {
+                    _ageCutoff = double.PositiveInfinity;
+                }
+                else
+                {
+                    _ageCutoff = _quantileEstimator.GetQuantile(tau);
+                    if (_ageCutoff == double.NegativeInfinity)
+                    {
+                        _ageCutoff = double.PositiveInfinity;
+                    }
+                }
+
+                // Update alpha1_hat
+                UpdateAlpha1Hat(now);
+            }
+        }
+
+        /// <summary>
+        /// Gets current metrics.
         /// </summary>
         public MetricsResponse GetMetrics()
         {
             lock (_lock)
             {
-                var occupancy = _levelTracker.GetAllQueueLengths();
+                var now = DateTime.UtcNow;
+                _assignmentLog.EvictExpired(now);
+                
+                var active = _assignmentLog.GetActiveCounts();
                 var (total, disabled, nonDisabled) = _rollingCounts.GetCounts();
                 double pDisabled = _rollingCounts.GetPDisabled();
                 
-                double shareLeftForOld = Math.Max(0, _config.Alpha1 - pDisabled);
-                double tau = 1.0 - shareLeftForOld;
-                tau = Math.Max(0, Math.Min(1, tau));
-                double ageCutoff = _quantileEstimator.GetQuantile(tau);
+                double util = (double)active[1] / _config.L1CapSoft;
+                int rateLimitRemaining = _rateLimiter.GetRemaining(now, _config.L1RateLimitPerMin);
 
                 var response = new MetricsResponse
                 {
-                    Alpha1 = _config.Alpha1,
+                    Alpha1 = _alpha1,
                     Alpha1Min = _config.Alpha1Min,
                     Alpha1Max = _config.Alpha1Max,
                     PDisabled = pDisabled,
-                    AgeCutoff = ageCutoff == double.NegativeInfinity ? 0 : ageCutoff,
+                    AgeCutoff = _ageCutoff == double.PositiveInfinity ? 0 : _ageCutoff,
                     Counts = new CountsInfo
                     {
                         Total = total,
                         Disabled = disabled,
                         NonDisabled = nonDisabled
                     },
-                    Levels = occupancy.ToDictionary(
+                    Levels = active.ToDictionary(
                         kvp => kvp.Key,
                         kvp => new LevelMetrics
                         {
@@ -176,7 +345,7 @@ namespace ai_indoor_nav_api.Services
                 };
 
                 // Add quantiles if we have data
-                if (_quantileEstimator.Count > 0)
+                if (_quantileEstimator.Count > 0 && _ageCutoff != double.PositiveInfinity)
                 {
                     response.QuantilesNonDisabledAge = new Dictionary<string, double>
                     {
@@ -198,7 +367,7 @@ namespace ai_indoor_nav_api.Services
             lock (_lock)
             {
                 if (request.Alpha1.HasValue)
-                    _config.Alpha1 = request.Alpha1.Value;
+                    _config.TargetAlpha1 = request.Alpha1.Value;
                 
                 if (request.Alpha1Min.HasValue)
                     _config.Alpha1Min = request.Alpha1Min.Value;
@@ -208,17 +377,10 @@ namespace ai_indoor_nav_api.Services
 
                 if (request.Window != null)
                 {
-                    if (request.Window.Mode != null)
-                        _config.WindowMode = request.Window.Mode;
-                    
                     if (request.Window.Minutes.HasValue)
                         _config.SlidingWindowMinutes = request.Window.Minutes.Value;
-                    
-                    if (request.Window.HalfLifeMinutes.HasValue)
-                        _config.HalfLifeMinutes = request.Window.HalfLifeMinutes.Value;
                 }
 
-                // Validate updated config
                 _config.Validate();
 
                 return GetCurrentConfig();
@@ -232,17 +394,36 @@ namespace ai_indoor_nav_api.Services
         {
             return new ConfigResponse
             {
-                Alpha1 = _config.Alpha1,
+                Alpha1 = _alpha1,
                 Alpha1Min = _config.Alpha1Min,
                 Alpha1Max = _config.Alpha1Max,
                 Window = new WindowConfig
                 {
-                    Mode = _config.WindowMode,
+                    Mode = "sliding",
                     Minutes = _config.SlidingWindowMinutes,
-                    HalfLifeMinutes = _config.HalfLifeMinutes
+                    HalfLifeMinutes = null
                 }
             };
         }
 
+        private void StartPeriodicTick()
+        {
+            _tickTimer = new System.Threading.Timer(
+                callback: _ =>
+                {
+                    try
+                    {
+                        ControllerTick();
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Error in controller tick: {ex.Message}");
+                    }
+                },
+                state: null,
+                dueTime: TimeSpan.FromMinutes(1),
+                period: TimeSpan.FromMinutes(1)
+            );
+        }
     }
 }
