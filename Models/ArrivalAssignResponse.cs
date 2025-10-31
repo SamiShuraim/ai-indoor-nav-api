@@ -16,7 +16,7 @@ namespace ai_indoor_nav_api.Models
         public double PDisabled { get; set; }
         public double ShareLeftForOld { get; set; }
         public double TauQuantile { get; set; }
-        public Dictionary<int, double> WaitEst { get; set; } = new();
+        public Dictionary<int, int> Occupancy { get; set; } = new();
         public string Reason { get; set; } = string.Empty;
     }
 }
