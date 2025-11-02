@@ -13,7 +13,6 @@ namespace ai_indoor_nav_api.Services
         private readonly AssignmentLog _assignmentLog;
         private readonly RollingQuantileEstimator _quantileEstimator;
         private readonly RollingCounts _rollingCounts;
-        private readonly RateLimiter _rateLimiter;
         private readonly Random _random;
         private System.Threading.Timer? _tickTimer;
 
@@ -29,7 +28,6 @@ namespace ai_indoor_nav_api.Services
             _assignmentLog = new AssignmentLog(_config.DwellMinutes, _config.TtlBufferMinutes);
             _quantileEstimator = new RollingQuantileEstimator(_config.SlidingWindowMinutes, useDecay: false, halfLifeMinutes: 45);
             _rollingCounts = new RollingCounts(_config.SlidingWindowMinutes, useDecay: false, halfLifeMinutes: 45);
-            _rateLimiter = new RateLimiter();
             _random = new Random(42); // Seeded for reproducibility
 
             _alpha1 = _config.TargetAlpha1;
@@ -67,9 +65,6 @@ namespace ai_indoor_nav_api.Services
                 int active2 = active[2];
                 int active3 = active[3];
 
-                // Get rate limit remaining
-                int rateLimitRemaining = _rateLimiter.GetRemaining(now, _config.L1RateLimitPerMin);
-
                 int assignedLevel;
                 string reason;
                 double pL1 = 0.0;
@@ -77,32 +72,25 @@ namespace ai_indoor_nav_api.Services
                 // === CASE 1: DISABLED ===
                 if (request.IsDisabled)
                 {
-                    if (active1 < _config.L1CapHard && rateLimitRemaining > 0)
+                    if (active1 < _config.L1CapHard)
                     {
                         assignedLevel = 1;
                         reason = "disabled priority";
-                        
-                        if (!_rateLimiter.TryAdmit(now, _config.L1RateLimitPerMin))
-                        {
-                            // Should not happen since we checked remaining, but safety check
-                            assignedLevel = GetLessFullLevel(active2, active3);
-                            reason = "disabled overflow (rate limit)";
-                        }
                     }
                     else
                     {
                         assignedLevel = GetLessFullLevel(active2, active3);
-                        reason = active1 >= _config.L1CapHard ? "disabled overflow (hard cap)" : "disabled overflow (rate limit)";
+                        reason = "disabled overflow (hard cap)";
                     }
                 }
                 // === CASE 2: NON-DISABLED ===
                 else
                 {
-                    // Check if L1 is at capacity or rate limited
-                    if (active1 >= _config.L1CapSoft || rateLimitRemaining == 0)
+                    // Check if L1 is at capacity
+                    if (active1 >= _config.L1CapSoft)
                     {
                         assignedLevel = GetLessFullLevel(active2, active3);
-                        reason = active1 >= _config.L1CapSoft ? "L1 capacity guard" : "L1 rate guard";
+                        reason = "L1 capacity guard";
                     }
                     // Check if we have age history
                     else if (_ageCutoff == double.PositiveInfinity)
@@ -121,16 +109,10 @@ namespace ai_indoor_nav_api.Services
                         if (r < pL1)
                         {
                             // Propose L1
-                            if (active1 < _config.L1CapSoft && rateLimitRemaining > 0)
+                            if (active1 < _config.L1CapSoft)
                             {
                                 assignedLevel = 1;
                                 reason = $"soft-gate pass (p={pL1:F3}, r={r:F3})";
-                                
-                                if (!_rateLimiter.TryAdmit(now, _config.L1RateLimitPerMin))
-                                {
-                                    assignedLevel = GetLessFullLevel(active2, active3);
-                                    reason = $"soft-gate pass but rate limited";
-                                }
                             }
                             else
                             {
@@ -320,7 +302,6 @@ namespace ai_indoor_nav_api.Services
                 double pDisabled = _rollingCounts.GetPDisabled();
                 
                 double util = (double)active[1] / _config.L1CapSoft;
-                int rateLimitRemaining = _rateLimiter.GetRemaining(now, _config.L1RateLimitPerMin);
 
                 var response = new MetricsResponse
                 {

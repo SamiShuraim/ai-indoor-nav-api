@@ -7,7 +7,6 @@ This load balancer distributes pilgrims across 3 levels using:
 - **Dynamic age cutoff** computed from quantiles
 - **Utilization-based feedback controller** that adjusts target share
 - **Sigmoid soft gate** around the age cutoff for smooth transitions
-- **Per-minute rate limiting** to prevent bursts
 
 ---
 
@@ -26,11 +25,11 @@ This load balancer distributes pilgrims across 3 levels using:
 ### Assignment Rules
 
 **Disabled pilgrims:**
-- Always go to Level 1 if under hard cap (550) and rate limit
+- Always go to Level 1 if under hard cap (550)
 - Otherwise overflow to Level 2/3
 
 **Non-disabled pilgrims:**
-- If Level 1 at soft cap (500) or rate limited → Level 2/3
+- If Level 1 at soft cap (500) → Level 2/3
 - Otherwise, apply **soft gate** based on age vs dynamic cutoff
 - Sigmoid function provides smooth probability:
   - Ages far above cutoff → ~100% chance of Level 1
@@ -97,17 +96,6 @@ p_L1 = 1 / (1 + exp(-z))
 - `age <= cutoff - 6`: p = 0% (deterministic)
 
 **Guard:** If recent share exceeds target, reduce probability to prevent overshoot.
-
----
-
-## Rate Limiting
-
-Per-minute limit for Level 1:
-```
-rate_limit = floor(L1_cap_soft / dwell_minutes) = floor(500 / 45) = 11 per minute
-```
-
-Prevents bursts from overwhelming Level 1.
 
 ---
 
@@ -212,7 +200,6 @@ Prevents bursts from overwhelming Level 1.
 
 ### ✅ Capacity Protection
 - Hard limits prevent overflow
-- Rate limiting prevents bursts
 - Disabled guaranteed Level 1 (up to hard cap)
 
 ### ✅ Adaptive Cutoff
@@ -231,7 +218,6 @@ Prevents bursts from overwhelming Level 1.
 - Prevents under/over-utilization of Level 1
 
 ### ✅ Safety
-- Rate limiting prevents instant overshoot
 - Recent share guard prevents overshooting target
 - Disabled overflow to L2/L3 when L1 full
 
@@ -305,7 +291,6 @@ curl -X POST http://localhost:5000/api/LoadBalancer/config \
 ### Core Components
 
 - **AssignmentLog**: Tracks active assignments with automatic expiry
-- **RateLimiter**: Per-minute rate limiting for Level 1
 - **RollingQuantileEstimator**: Computes percentiles of recent ages
 - **RollingCounts**: Tracks disabled fraction
 - **LoadBalancerService**: Main logic with controller and soft gate
@@ -322,10 +307,10 @@ Runs every minute:
 ### Assignment Flow
 
 1. Evict expired assignments
-2. Get active counts and rate limit
+2. Get active counts
 3. If disabled → L1 (or overflow)
 4. If non-disabled:
-   - Check capacity and rate limit
+   - Check capacity
    - Compute soft gate probability
    - Draw random number
    - Assign based on result
@@ -343,6 +328,5 @@ Runs every minute:
 - Dynamic age cutoff from quantiles
 - Utilization feedback controller
 - Sigmoid soft gate for smooth transitions
-- Rate limiting for burst protection
 
 **Result:** Adaptive system that maintains target utilization, adapts to population, and provides smooth, probabilistic assignments
