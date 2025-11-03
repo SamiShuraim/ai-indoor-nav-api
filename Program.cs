@@ -27,6 +27,7 @@ builder.Services.AddControllers(options =>
         opts.SerializerSettings.Converters.Add(new FeatureJsonConverter());
         opts.SerializerSettings.Converters.Add(new GeometryConverter());
         opts.SerializerSettings.NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore;
+        opts.SerializerSettings.ContractResolver = new Newtonsoft.Json.Serialization.CamelCasePropertyNamesContractResolver();
     });
 
 
@@ -53,6 +54,8 @@ builder.Services.AddDbContext<MyDbContext>(options =>
 
 // Register navigation service
 builder.Services.AddScoped<NavigationService>();
+// Register load balancer service as singleton to maintain state across requests
+builder.Services.AddSingleton<LoadBalancerService>();
 builder.Services.AddAuthentication(options =>
     {
         options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;

@@ -30,6 +30,9 @@ namespace ai_indoor_nav_api.Models
         [Column("level")]
         public int? Level { get; set; }
 
+        [Column("level")]
+        public int? Level { get; set; } = null;
+
         [Column("created_at")]
         public DateTime CreatedAt { get; set; } = UtcNow;
 
