@@ -26,10 +26,7 @@ namespace ai_indoor_nav_api.Models
 
         [Column("is_visible")]
         public bool IsVisible { get; set; } = true;
-
-        [Column("level")]
-        public int? Level { get; set; }
-
+        
         [Column("level")]
         public int? Level { get; set; } = null;
 
