@@ -5,8 +5,6 @@ namespace ai_indoor_nav_api.Models
         public double Alpha1 { get; set; }
         public double Alpha1Min { get; set; }
         public double Alpha1Max { get; set; }
-        public double WaitTargetMinutes { get; set; }
-        public double ControllerGain { get; set; }
         public double PDisabled { get; set; }
         public double AgeCutoff { get; set; }
         public CountsInfo Counts { get; set; } = new();
@@ -23,6 +21,6 @@ namespace ai_indoor_nav_api.Models
 
     public class LevelMetrics
     {
-        public double WaitEst { get; set; }
+        public int Occupancy { get; set; }
     }
 }
