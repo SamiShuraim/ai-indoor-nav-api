@@ -15,9 +15,6 @@ namespace ai_indoor_nav_api.Services
         public double DwellMinutes { get; set; } = 45.0;
         public double TtlBufferMinutes { get; set; } = 0.0;
 
-        // Rate limiting
-        public int L1RateLimitPerMin => (int)Math.Floor(L1CapSoft / DwellMinutes);
-
         // Target alpha1 (steady-state share)
         public double TargetAlpha1 { get; set; } = 0.0769; // 500 / (500+3000+3000)
         public double Alpha1Min { get; set; } = 0.05;

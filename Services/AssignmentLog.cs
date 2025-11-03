@@ -94,63 +94,12 @@ namespace ai_indoor_nav_api.Services
             }
         }
 
-        private class Assignment
+        public class Assignment
         {
             public int Level { get; set; }
             public int Age { get; set; }
             public bool IsDisabled { get; set; }
             public DateTime Timestamp { get; set; }
-        }
-    }
-
-    public class RateLimiter
-    {
-        private readonly object _lock = new object();
-        private int _currentMinute = -1;
-        private int _countInCurrentMinute = 0;
-
-        /// <summary>
-        /// Attempts to admit to L1. Returns true if admitted, false if rate limit exceeded.
-        /// </summary>
-        public bool TryAdmit(DateTime now, int rateLimit)
-        {
-            lock (_lock)
-            {
-                int minute = now.Minute + now.Hour * 60 + now.Day * 24 * 60;
-                
-                // Reset counter on minute boundary
-                if (minute != _currentMinute)
-                {
-                    _currentMinute = minute;
-                    _countInCurrentMinute = 0;
-                }
-
-                if (_countInCurrentMinute >= rateLimit)
-                {
-                    return false; // Rate limit exceeded
-                }
-
-                _countInCurrentMinute++;
-                return true;
-            }
-        }
-
-        /// <summary>
-        /// Gets remaining capacity in current minute.
-        /// </summary>
-        public int GetRemaining(DateTime now, int rateLimit)
-        {
-            lock (_lock)
-            {
-                int minute = now.Minute + now.Hour * 60 + now.Day * 24 * 60;
-                
-                if (minute != _currentMinute)
-                {
-                    return rateLimit; // Fresh minute
-                }
-
-                return Math.Max(0, rateLimit - _countInCurrentMinute);
-            }
         }
     }
 }
