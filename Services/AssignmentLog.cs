@@ -94,7 +94,7 @@ namespace ai_indoor_nav_api.Services
             }
         }
 
-        private class Assignment
+        public class Assignment
         {
             public int Level { get; set; }
             public int Age { get; set; }
