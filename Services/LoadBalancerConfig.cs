@@ -1,84 +1,61 @@
 namespace ai_indoor_nav_api.Services
 {
     /// <summary>
-    /// Configuration for the adaptive load balancer.
-    /// All parameters are runtime configurable.
+    /// Configuration for capacity-based adaptive load balancer with soft gate.
     /// </summary>
     public class LoadBalancerConfig
     {
-        // Controller parameters
-        public double Alpha1 { get; set; } = 0.35;
-        public double Alpha1Min { get; set; } = 0.15;
-        public double Alpha1Max { get; set; } = 0.55;
-        public double WaitTargetMinutes { get; set; } = 12.0;
-        public double ControllerGain { get; set; } = 0.03;
+        // Capacity limits
+        public int L1CapSoft { get; set; } = 500;
+        public int L1CapHard { get; set; } = 550;
+        public int L2Cap { get; set; } = 3000;
+        public int L3Cap { get; set; } = 3000;
 
-        // Window parameters
-        public string WindowMode { get; set; } = "sliding"; // "sliding" or "decay"
-        public double SlidingWindowMinutes { get; set; } = 45.0;
-        public double HalfLifeMinutes { get; set; } = 45.0;
+        // Dwell time
+        public double DwellMinutes { get; set; } = 45.0;
+        public double TtlBufferMinutes { get; set; } = 0.0;
 
-        // Soft gate parameters
+        // Target alpha1 (steady-state share)
+        public double TargetAlpha1 { get; set; } = 0.0769; // 500 / (500+3000+3000)
+        public double Alpha1Min { get; set; } = 0.05;
+        public double Alpha1Max { get; set; } = 0.12;
+
+        // Controller
+        public double TargetUtilL1 { get; set; } = 0.90;
+        public double ControllerGain { get; set; } = 0.05;
+
+        // Soft gate
         public bool SoftGateEnabled { get; set; } = true;
         public double SoftGateBandYears { get; set; } = 3.0;
+        public double SoftGateFloor { get; set; } = 0.02;
+        public double SoftGateCeiling { get; set; } = 0.98;
 
-        // Randomization parameters
-        public bool RandomizationEnabled { get; set; } = true;
-        public double RandomizationRate { get; set; } = 0.07;
+        // Recent share guard
+        public double RecentShareWindowMinutes { get; set; } = 10.0;
+        public double RecentShareGuard { get; set; } = 0.02;
+
+        // Rolling window for statistics
+        public double SlidingWindowMinutes { get; set; } = 45.0;
 
         public void Validate()
         {
-            if (Alpha1 < 0 || Alpha1 > 1)
-                throw new ArgumentException("Alpha1 must be between 0 and 1");
+            if (L1CapSoft <= 0 || L1CapHard <= 0 || L2Cap <= 0 || L3Cap <= 0)
+                throw new ArgumentException("All capacity limits must be positive");
             
-            if (Alpha1Min < 0 || Alpha1Min > 1)
-                throw new ArgumentException("Alpha1Min must be between 0 and 1");
+            if (L1CapHard < L1CapSoft)
+                throw new ArgumentException("L1CapHard must be >= L1CapSoft");
             
-            if (Alpha1Max < 0 || Alpha1Max > 1)
-                throw new ArgumentException("Alpha1Max must be between 0 and 1");
+            if (DwellMinutes <= 0)
+                throw new ArgumentException("DwellMinutes must be positive");
             
-            if (Alpha1Min > Alpha1Max)
-                throw new ArgumentException("Alpha1Min must be less than or equal to Alpha1Max");
+            if (Alpha1Min < 0 || Alpha1Max > 1 || Alpha1Min > Alpha1Max)
+                throw new ArgumentException("Invalid alpha1 bounds");
             
-            if (WaitTargetMinutes <= 0)
-                throw new ArgumentException("WaitTargetMinutes must be positive");
+            if (TargetUtilL1 <= 0 || TargetUtilL1 > 1)
+                throw new ArgumentException("TargetUtilL1 must be in (0, 1]");
             
             if (ControllerGain <= 0)
                 throw new ArgumentException("ControllerGain must be positive");
-            
-            if (SlidingWindowMinutes <= 0)
-                throw new ArgumentException("SlidingWindowMinutes must be positive");
-            
-            if (HalfLifeMinutes <= 0)
-                throw new ArgumentException("HalfLifeMinutes must be positive");
-            
-            if (WindowMode != "sliding" && WindowMode != "decay")
-                throw new ArgumentException("WindowMode must be 'sliding' or 'decay'");
-            
-            if (SoftGateBandYears < 0)
-                throw new ArgumentException("SoftGateBandYears must be non-negative");
-            
-            if (RandomizationRate < 0 || RandomizationRate > 1)
-                throw new ArgumentException("RandomizationRate must be between 0 and 1");
-        }
-
-        public LoadBalancerConfig Clone()
-        {
-            return new LoadBalancerConfig
-            {
-                Alpha1 = this.Alpha1,
-                Alpha1Min = this.Alpha1Min,
-                Alpha1Max = this.Alpha1Max,
-                WaitTargetMinutes = this.WaitTargetMinutes,
-                ControllerGain = this.ControllerGain,
-                WindowMode = this.WindowMode,
-                SlidingWindowMinutes = this.SlidingWindowMinutes,
-                HalfLifeMinutes = this.HalfLifeMinutes,
-                SoftGateEnabled = this.SoftGateEnabled,
-                SoftGateBandYears = this.SoftGateBandYears,
-                RandomizationEnabled = this.RandomizationEnabled,
-                RandomizationRate = this.RandomizationRate
-            };
         }
     }
 }
