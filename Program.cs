@@ -14,9 +14,6 @@ using NetTopologySuite.IO.Converters;
 DotEnvOptions options = new DotEnvOptions(probeLevelsToSearch: 6);
 DotEnv.Load(options);
 
-// Force IPv4 only to fix Render.com IPv6 issue
-AppContext.SetSwitch("System.Net.DisableIPv6", true);
-
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Configuration.AddEnvironmentVariables();
