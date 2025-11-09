@@ -105,7 +105,7 @@ ai-indoor-nav-api/
 
 1. **Database Migration to Supabase**
    - Migrated from local PostgreSQL to Supabase cloud database
-   - Updated `.env` file with new connection string
+   - Updated `.env` file with connection pooler (port 6543)
    - Applied all existing migrations to new database
 
 2. **Fixed ModelSnapshot Exclusion**
@@ -115,6 +115,17 @@ ai-indoor-nav-api/
 3. **Added Level Column to RouteNodes**
    - Applied `AddLevelToRouteNode` migration
    - Added `level` column to `route_nodes` table for multi-level navigation support
+
+4. **Improved Docker Configuration**
+   - Added DNS utilities for debugging
+   - Added health check endpoint
+   - Configured for production environment
+   - Added connection pooling support
+
+5. **Cloud Deployment Support**
+   - Created comprehensive deployment guide
+   - Configured connection pooler for better cloud reliability
+   - Added environment variable documentation
 
 ### Environment Variables
 

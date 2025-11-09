@@ -14,9 +14,25 @@ using NetTopologySuite.IO.Converters;
 DotEnvOptions options = new DotEnvOptions(probeLevelsToSearch: 6);
 DotEnv.Load(options);
 
+// Force IPv4 only to fix Render.com IPv6 issue
+AppContext.SetSwitch("System.Net.DisableIPv6", true);
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Configuration.AddEnvironmentVariables();
+
+// Debug: Check if connection string is loaded
+var connString = Environment.GetEnvironmentVariable("DEFAULT_CONNECTION");
+if (string.IsNullOrEmpty(connString))
+{
+    Console.WriteLine("WARNING: DEFAULT_CONNECTION environment variable is not set!");
+    Console.WriteLine($"Current directory: {Directory.GetCurrentDirectory()}");
+    Console.WriteLine($".env file exists: {File.Exists(".env")}");
+}
+else
+{
+    Console.WriteLine($"Connection string loaded: {connString.Substring(0, Math.Min(50, connString.Length))}...");
+}
 
 // Add services to the container.
 builder.Services.AddControllers(options =>

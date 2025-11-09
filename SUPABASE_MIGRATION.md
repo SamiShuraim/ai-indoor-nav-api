@@ -183,7 +183,49 @@ If migrations fail:
 - ✅ Project configuration fixed (ModelSnapshot included)
 - ✅ Environment configuration updated
 
+## Cloud Deployment Notes
+
+### Connection Pooler (Recommended for Production)
+
+For cloud deployments, use Supabase's connection pooler (PgBouncer):
+
+**Connection String:**
+```
+Host=db.xhvapujhplecxkqvepww.supabase.co;Port=6543;Database=postgres;Username=postgres;Password=wFdsg5nDmdlc1MQK;SSL Mode=Require;Pooling=true;Maximum Pool Size=10
+```
+
+**Benefits:**
+- More reliable connection management
+- Better handling of DNS resolution
+- Prevents connection exhaustion
+- Optimized for cloud environments
+
+### Environment Variables for Cloud
+
+Set these in your cloud hosting service (not in `.env` file):
+
+```
+DEFAULT_CONNECTION=Host=db.xhvapujhplecxkqvepww.supabase.co;Port=6543;Database=postgres;Username=postgres;Password=wFdsg5nDmdlc1MQK;SSL Mode=Require;Pooling=true;Maximum Pool Size=10
+JWT_ISSUER=your-issuer
+JWT_AUDIENCE=your-audience
+JWT_KEY=your-secret-key-minimum-32-characters
+USER1_USERNAME=admin
+USER1_EMAIL=admin@example.com
+USER1_PASSWORD=SecurePassword123!
+USER2_USERNAME=user2
+USER2_EMAIL=user2@example.com
+USER2_PASSWORD=SecurePassword123!
+USER3_USERNAME=user3
+USER3_EMAIL=user3@example.com
+USER3_PASSWORD=SecurePassword123!
+```
+
+See `CLOUD_DEPLOYMENT_GUIDE.md` for detailed platform-specific instructions.
+
 ## Conclusion
 
 The database has been successfully migrated to Supabase. The application is now configured to use the cloud-hosted PostgreSQL database with all spatial features (PostGIS) and authentication (ASP.NET Identity) fully functional.
+
+**Local Development:** Uses `.env` file with connection pooler (port 6543)
+**Cloud Deployment:** Uses environment variables set in hosting service
 
