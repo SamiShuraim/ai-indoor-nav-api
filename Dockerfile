@@ -22,7 +22,6 @@ COPY --from=build /app/out .
 # Set environment to Production
 ENV ASPNETCORE_ENVIRONMENT=Production
 ENV ASPNETCORE_URLS=http://+:80
-ENV DOTNET_SYSTEM_NET_DISABLEIPV6=1
 
 # Expose port
 EXPOSE 80
