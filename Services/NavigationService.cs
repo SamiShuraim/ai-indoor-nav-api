@@ -532,19 +532,14 @@ namespace ai_indoor_nav_api.Services
                 return new List<RouteNode> { startNode };
             }
 
-            // Get all visible nodes on the same floor (or all floors if not specified)
-            var query = _context.RouteNodes.Where(n => n.IsVisible);
-            if (floorId.HasValue)
-            {
-                query = query.Where(n => n.FloorId == floorId.Value);
-            }
-            else
-            {
-                query = query.Where(n => n.FloorId == startNode.FloorId);
-            }
-
-            var allNodes = await query.ToListAsync();
-            Console.WriteLine($"[CROSS_LEVEL] Retrieved {allNodes.Count} visible nodes");
+            // Get all visible nodes across all floors
+            // NOTE: Cross-level navigation may require traversing nodes on different floors
+            // (e.g., stairs/elevators connecting different floors), so we need to load all nodes
+            var allNodes = await _context.RouteNodes
+                .Where(n => n.IsVisible)
+                .ToListAsync();
+            
+            Console.WriteLine($"[CROSS_LEVEL] Retrieved {allNodes.Count} visible nodes across all floors");
 
             // Group nodes by level for optimization
             var nodesByLevel = allNodes
