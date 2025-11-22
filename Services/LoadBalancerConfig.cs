@@ -6,10 +6,10 @@ namespace ai_indoor_nav_api.Services
     public class LoadBalancerConfig
     {
         // Capacity limits
-        public int L1CapSoft { get; set; } = 500;
-        public int L1CapHard { get; set; } = 550;
-        public int L2Cap { get; set; } = 3000;
-        public int L3Cap { get; set; } = 3000;
+        public int L1CapSoft { get; set; } = 5000;
+        public int L1CapHard { get; set; } = 5500;
+        public int L2Cap { get; set; } = 30000;
+        public int L3Cap { get; set; } = 30000;
 
         // Dwell time
         public double DwellMinutes { get; set; } = 45.0;
