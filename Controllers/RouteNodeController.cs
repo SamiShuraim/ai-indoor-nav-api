@@ -386,6 +386,158 @@ namespace ai_indoor_nav_api.Controllers
             }
         }
 
+        // POST: api/RouteNode/navigateToLevel
+        [HttpPost("navigateToLevel")]
+        public async Task<ActionResult<FeatureCollection>> NavigateToLevel([FromBody] LevelNavigationRequest request)
+        {
+            Console.WriteLine("=== NAVIGATE TO LEVEL ENDPOINT STARTED ===");
+            try
+            {
+                Console.WriteLine($"[NAV_TO_LEVEL] Received request:");
+                Console.WriteLine($"[NAV_TO_LEVEL] - Current Node ID: {request?.CurrentNodeId}");
+                Console.WriteLine($"[NAV_TO_LEVEL] - Target Level: {request?.TargetLevel}");
+                Console.WriteLine($"[NAV_TO_LEVEL] - Floor ID: {request?.FloorId}");
+
+                // Validate the request
+                if (request.CurrentNodeId <= 0 || request.TargetLevel <= 0)
+                {
+                    Console.WriteLine("[NAV_TO_LEVEL] ERROR: Invalid request - missing required fields");
+                    return BadRequest("Current node ID and target level are required.");
+                }
+
+                Console.WriteLine("[NAV_TO_LEVEL] Step 1: Loading start node...");
+                
+                // Get the start node directly
+                var startNode = await context.RouteNodes.FindAsync(request.CurrentNodeId);
+
+                if (startNode == null)
+                {
+                    Console.WriteLine($"[NAV_TO_LEVEL] ERROR: Node {request.CurrentNodeId} not found");
+                    return NotFound($"Node with ID {request.CurrentNodeId} not found.");
+                }
+
+                Console.WriteLine($"[NAV_TO_LEVEL] Start node loaded: ID={startNode.Id}, Level={startNode.Level ?? -1}, FloorId={startNode.FloorId}");
+
+                // Use the node's floor ID if not explicitly provided
+                int floorId = request.FloorId ?? startNode.FloorId;
+                
+                if (!request.FloorId.HasValue)
+                {
+                    Console.WriteLine($"[NAV_TO_LEVEL] FloorId not provided, using node's floor: {floorId}");
+                }
+
+                // Check if we're already at a node on the target level
+                if (startNode.Level.HasValue && startNode.Level.Value == request.TargetLevel)
+                {
+                    Console.WriteLine($"[NAV_TO_LEVEL] User is already at target level {request.TargetLevel}");
+                    // Return a single-node path (the current position)
+                    var singleNodePath = new FeatureCollection();
+                    var feature = startNode.ToGeoJsonFeature();
+                    feature.Attributes.Add("path_order", 0);
+                    feature.Attributes.Add("is_path_node", true);
+                    feature.Attributes.Add("node_level", startNode.Level.Value);
+                    singleNodePath.Add(feature);
+                    return Ok(singleNodePath);
+                }
+
+                Console.WriteLine("[NAV_TO_LEVEL] Step 2: Finding cross-level path...");
+                
+                // Find the path to the target level
+                var path = await navigationService.FindCrossLevelPathAsync(startNode.Id, request.TargetLevel, floorId);
+
+                if (path == null || path.Count == 0)
+                {
+                    Console.WriteLine("[NAV_TO_LEVEL] ERROR: No path found to target level");
+                    return NotFound($"No path found from node {request.CurrentNodeId} to level {request.TargetLevel}.");
+                }
+
+                Console.WriteLine($"[NAV_TO_LEVEL] SUCCESS: Path found with {path.Count} nodes");
+                for (int i = 0; i < path.Count; i++)
+                {
+                    var node = path[i];
+                    Console.WriteLine($"[NAV_TO_LEVEL] Path[{i}]: Node ID={node.Id}, Level={node.Level}, Geometry=({node.Geometry?.X}, {node.Geometry?.Y})");
+                }
+
+                Console.WriteLine("[NAV_TO_LEVEL] Step 3: Converting path to GeoJSON...");
+                
+                // Convert path to GeoJSON FeatureCollection
+                var pathFeatures = new FeatureCollection();
+
+                // Add path nodes as Point features
+                Console.WriteLine("[NAV_TO_LEVEL] Adding path nodes as Point features...");
+                foreach (var node in path)
+                {
+                    var feature = node.ToGeoJsonFeature();
+                    feature.Attributes.Add("path_order", path.IndexOf(node));
+                    feature.Attributes.Add("is_path_node", true);
+                    feature.Attributes.Add("node_level", node.Level ?? -1);
+                    
+                    // Mark level transitions
+                    if (path.IndexOf(node) > 0)
+                    {
+                        var prevNode = path[path.IndexOf(node) - 1];
+                        if (prevNode.Level != node.Level)
+                        {
+                            feature.Attributes.Add("is_level_transition", true);
+                            feature.Attributes.Add("transition_from_level", prevNode.Level ?? -1);
+                            feature.Attributes.Add("transition_to_level", node.Level ?? -1);
+                            Console.WriteLine($"[NAV_TO_LEVEL] Level transition detected: {prevNode.Level} -> {node.Level} at node {node.Id}");
+                        }
+                    }
+                    
+                    pathFeatures.Add(feature);
+                    Console.WriteLine($"[NAV_TO_LEVEL] Added node feature: ID={node.Id}, Level={node.Level}, Order={path.IndexOf(node)}");
+                }
+
+                // Add path edges as LineString features
+                Console.WriteLine("[NAV_TO_LEVEL] Adding path edges as LineString features...");
+                for (int i = 0; i < path.Count - 1; i++)
+                {
+                    var currentNode = path[i];
+                    var nextNode = path[i + 1];
+
+                    if (currentNode.Geometry != null && nextNode.Geometry != null)
+                    {
+                        var coordinates = new[]
+                        {
+                            new Coordinate(currentNode.Geometry.X, currentNode.Geometry.Y),
+                            new Coordinate(nextNode.Geometry.X, nextNode.Geometry.Y)
+                        };
+
+                        var lineString = new LineString(coordinates) { SRID = 4326 };
+                        var lineFeature = new Feature(lineString, new AttributesTable
+                        {
+                            { "path_segment", i },
+                            { "is_path_edge", true },
+                            { "from_node_id", currentNode.Id },
+                            { "to_node_id", nextNode.Id },
+                            { "from_level", currentNode.Level ?? -1 },
+                            { "to_level", nextNode.Level ?? -1 },
+                            { "is_level_transition", currentNode.Level != nextNode.Level }
+                        });
+
+                        pathFeatures.Add(lineFeature);
+                        Console.WriteLine($"[NAV_TO_LEVEL] Added edge feature: Segment={i}, From={currentNode.Id} (L{currentNode.Level}), To={nextNode.Id} (L{nextNode.Level})");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"[NAV_TO_LEVEL] WARNING: Skipped edge {i} - missing geometry on node {currentNode.Id} or {nextNode.Id}");
+                    }
+                }
+
+                Console.WriteLine($"[NAV_TO_LEVEL] SUCCESS: Returning FeatureCollection with {pathFeatures.Count} features");
+                Console.WriteLine("=== NAVIGATE TO LEVEL ENDPOINT COMPLETED ===");
+                return Ok(pathFeatures);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[NAV_TO_LEVEL] EXCEPTION: {ex.Message}");
+                Console.WriteLine($"[NAV_TO_LEVEL] STACK TRACE: {ex.StackTrace}");
+                Console.WriteLine("=== NAVIGATE TO LEVEL ENDPOINT FAILED ===");
+                return StatusCode(500, $"Internal server error: {ex.Message}");
+            }
+        }
+
         private bool RouteNodeExists(int id)
         {
             return context.RouteNodes.Any(e => e.Id == id);

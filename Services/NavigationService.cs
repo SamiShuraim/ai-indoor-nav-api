@@ -302,6 +302,54 @@ namespace ai_indoor_nav_api.Services
         }
 
         /// <summary>
+        /// Finds the closest node to a given point on a specific floor with a specific level
+        /// </summary>
+        public async Task<RouteNode?> FindClosestNodeByLevelAsync(Point location, int floorId, int level)
+        {
+            Console.WriteLine($"[NAV_SERVICE] FindClosestNodeByLevelAsync called");
+            Console.WriteLine($"[NAV_SERVICE] - Location: X={location.X}, Y={location.Y}, FloorId={floorId}, Level={level}");
+            
+            var nodesOnFloor = await _context.RouteNodes
+                .Where(n => n.FloorId == floorId && n.IsVisible && n.Level == level)
+                .ToListAsync();
+
+            Console.WriteLine($"[NAV_SERVICE] Found {nodesOnFloor.Count} visible nodes on floor {floorId} at level {level}");
+
+            RouteNode? closestNode = null;
+            double minDistance = double.MaxValue;
+
+            foreach (var node in nodesOnFloor)
+            {
+                if (node.Geometry == null)
+                {
+                    Console.WriteLine($"[NAV_SERVICE] Skipping node {node.Id} - null geometry");
+                    continue;
+                }
+
+                var distance = CalculateDistance(location, node.Geometry);
+                Console.WriteLine($"[NAV_SERVICE] Node {node.Id} distance: {distance:F6}");
+                
+                if (distance < minDistance)
+                {
+                    minDistance = distance;
+                    closestNode = node;
+                    Console.WriteLine($"[NAV_SERVICE] New closest node: {node.Id} with distance {distance:F6}");
+                }
+            }
+
+            if (closestNode != null)
+            {
+                Console.WriteLine($"[NAV_SERVICE] Final closest node: ID={closestNode.Id}, Distance={minDistance:F6}, Level={closestNode.Level}");
+            }
+            else
+            {
+                Console.WriteLine($"[NAV_SERVICE] No closest node found");
+            }
+
+            return closestNode;
+        }
+
+        /// <summary>
         /// Implements Dijkstra's algorithm to find the shortest path between two nodes
         /// </summary>
         public async Task<List<RouteNode>?> FindShortestPathAsync(int startNodeId, int endNodeId)
@@ -457,6 +505,222 @@ namespace ai_indoor_nav_api.Services
             }
 
             Console.WriteLine($"[DIJKSTRA] Final path has {path.Count} nodes");
+            return path;
+        }
+
+        /// <summary>
+        /// Finds shortest path across different levels using A* algorithm with level transition costs
+        /// </summary>
+        public async Task<List<RouteNode>?> FindCrossLevelPathAsync(int startNodeId, int targetLevel, int? floorId = null)
+        {
+            Console.WriteLine($"[CROSS_LEVEL] Starting cross-level pathfinding");
+            Console.WriteLine($"[CROSS_LEVEL] - StartNodeId: {startNodeId}, TargetLevel: {targetLevel}");
+
+            var startNode = await _context.RouteNodes.FindAsync(startNodeId);
+            if (startNode == null)
+            {
+                Console.WriteLine($"[CROSS_LEVEL] ERROR: Start node {startNodeId} not found");
+                return null;
+            }
+
+            Console.WriteLine($"[CROSS_LEVEL] Start node: ID={startNode.Id}, FloorId={startNode.FloorId}, Level={startNode.Level}");
+
+            // If we're already at the target level, find the nearest node on that level
+            if (startNode.Level == targetLevel)
+            {
+                Console.WriteLine($"[CROSS_LEVEL] Already at target level {targetLevel}");
+                return new List<RouteNode> { startNode };
+            }
+
+            // Get all visible nodes on the same floor (or all floors if not specified)
+            var query = _context.RouteNodes.Where(n => n.IsVisible);
+            if (floorId.HasValue)
+            {
+                query = query.Where(n => n.FloorId == floorId.Value);
+            }
+            else
+            {
+                query = query.Where(n => n.FloorId == startNode.FloorId);
+            }
+
+            var allNodes = await query.ToListAsync();
+            Console.WriteLine($"[CROSS_LEVEL] Retrieved {allNodes.Count} visible nodes");
+
+            // Group nodes by level for optimization
+            var nodesByLevel = allNodes
+                .Where(n => n.Level.HasValue)
+                .GroupBy(n => n.Level.Value)
+                .ToDictionary(g => g.Key, g => g.ToList());
+
+            Console.WriteLine($"[CROSS_LEVEL] Nodes grouped into {nodesByLevel.Count} levels");
+            foreach (var level in nodesByLevel.Keys)
+            {
+                Console.WriteLine($"[CROSS_LEVEL] - Level {level}: {nodesByLevel[level].Count} nodes");
+            }
+
+            // Find nodes on target level
+            if (!nodesByLevel.ContainsKey(targetLevel) || nodesByLevel[targetLevel].Count == 0)
+            {
+                Console.WriteLine($"[CROSS_LEVEL] ERROR: No nodes found on target level {targetLevel}");
+                return null;
+            }
+
+            // Use A* algorithm to find path
+            var path = AStarCrossLevelPath(allNodes, startNodeId, targetLevel);
+            
+            if (path != null)
+            {
+                Console.WriteLine($"[CROSS_LEVEL] SUCCESS: Path found with {path.Count} nodes");
+                for (int i = 0; i < path.Count; i++)
+                {
+                    Console.WriteLine($"[CROSS_LEVEL] Path[{i}]: Node ID={path[i].Id}, Level={path[i].Level}");
+                }
+            }
+            else
+            {
+                Console.WriteLine($"[CROSS_LEVEL] ERROR: No path found to target level {targetLevel}");
+            }
+
+            return path;
+        }
+
+        /// <summary>
+        /// A* algorithm implementation for cross-level pathfinding with level transition penalties
+        /// </summary>
+        private List<RouteNode>? AStarCrossLevelPath(List<RouteNode> nodes, int startId, int targetLevel)
+        {
+            const double LEVEL_TRANSITION_PENALTY = 50.0; // Cost for changing levels
+            const double LEVEL_DIFFERENCE_MULTIPLIER = 10.0; // Heuristic multiplier for level difference
+
+            Console.WriteLine($"[A_STAR] Starting A* cross-level pathfinding");
+            Console.WriteLine($"[A_STAR] - Nodes count: {nodes.Count}, StartId: {startId}, TargetLevel: {targetLevel}");
+
+            var nodeDict = nodes.ToDictionary(n => n.Id, n => n);
+            var gScore = new Dictionary<int, double>(); // Cost from start to node
+            var fScore = new Dictionary<int, double>(); // Estimated total cost (gScore + heuristic)
+            var previous = new Dictionary<int, int?>();
+            var openSet = new HashSet<int> { startId };
+            var closedSet = new HashSet<int>();
+
+            // Find target nodes (any node on target level)
+            var targetNodes = nodes.Where(n => n.Level == targetLevel).Select(n => n.Id).ToHashSet();
+            
+            if (targetNodes.Count == 0)
+            {
+                Console.WriteLine($"[A_STAR] ERROR: No nodes found on target level {targetLevel}");
+                return null;
+            }
+
+            Console.WriteLine($"[A_STAR] Found {targetNodes.Count} target nodes on level {targetLevel}");
+
+            // Initialize scores
+            foreach (var node in nodes)
+            {
+                gScore[node.Id] = node.Id == startId ? 0 : double.MaxValue;
+                fScore[node.Id] = node.Id == startId ? HeuristicCost(node, targetLevel) : double.MaxValue;
+                previous[node.Id] = null;
+            }
+
+            int iteration = 0;
+            while (openSet.Count > 0)
+            {
+                iteration++;
+                
+                // Get node with lowest fScore
+                var currentId = openSet.OrderBy(id => fScore[id]).First();
+                var currentNode = nodeDict[currentId];
+
+                Console.WriteLine($"[A_STAR] Iteration {iteration}: Processing node {currentId}, Level={currentNode.Level}, fScore={fScore[currentId]:F2}");
+
+                // Check if we reached target level
+                if (targetNodes.Contains(currentId))
+                {
+                    Console.WriteLine($"[A_STAR] Reached target level {targetLevel} at node {currentId}!");
+                    return ReconstructPath(previous, nodeDict, currentId, startId);
+                }
+
+                openSet.Remove(currentId);
+                closedSet.Add(currentId);
+
+                // Process neighbors
+                foreach (var neighborId in currentNode.ConnectedNodeIds)
+                {
+                    if (closedSet.Contains(neighborId) || !nodeDict.ContainsKey(neighborId))
+                        continue;
+
+                    var neighborNode = nodeDict[neighborId];
+                    if (currentNode.Geometry == null || neighborNode.Geometry == null)
+                        continue;
+
+                    // Calculate actual distance
+                    var distance = CalculateDistance(currentNode.Geometry, neighborNode.Geometry);
+                    
+                    // Add level transition penalty if levels differ
+                    var levelPenalty = 0.0;
+                    if (currentNode.Level.HasValue && neighborNode.Level.HasValue && 
+                        currentNode.Level.Value != neighborNode.Level.Value)
+                    {
+                        levelPenalty = LEVEL_TRANSITION_PENALTY;
+                        Console.WriteLine($"[A_STAR] Level transition: {currentNode.Level} -> {neighborNode.Level} (penalty: {levelPenalty})");
+                    }
+
+                    var tentativeGScore = gScore[currentId] + distance + levelPenalty;
+
+                    if (tentativeGScore < gScore[neighborId])
+                    {
+                        // This path is better
+                        previous[neighborId] = currentId;
+                        gScore[neighborId] = tentativeGScore;
+                        fScore[neighborId] = tentativeGScore + HeuristicCost(neighborNode, targetLevel);
+
+                        if (!openSet.Contains(neighborId))
+                        {
+                            openSet.Add(neighborId);
+                            Console.WriteLine($"[A_STAR] Added node {neighborId} to open set (Level={neighborNode.Level}, gScore={gScore[neighborId]:F2}, fScore={fScore[neighborId]:F2})");
+                        }
+                    }
+                }
+
+                // Safety check to prevent infinite loops
+                if (iteration > nodes.Count * 10)
+                {
+                    Console.WriteLine($"[A_STAR] ERROR: Exceeded maximum iterations ({iteration})");
+                    return null;
+                }
+            }
+
+            Console.WriteLine($"[A_STAR] No path found after {iteration} iterations");
+            return null;
+        }
+
+        /// <summary>
+        /// Heuristic cost estimation based on level difference
+        /// </summary>
+        private double HeuristicCost(RouteNode node, int targetLevel)
+        {
+            if (!node.Level.HasValue)
+                return 100.0; // High cost for nodes without level info
+
+            var levelDiff = Math.Abs(node.Level.Value - targetLevel);
+            return levelDiff * 10.0; // Each level difference adds to the heuristic
+        }
+
+        /// <summary>
+        /// Reconstructs the path from the previous node dictionary
+        /// </summary>
+        private List<RouteNode> ReconstructPath(Dictionary<int, int?> previous, Dictionary<int, RouteNode> nodeDict, int endId, int startId)
+        {
+            var path = new List<RouteNode>();
+            int? current = endId;
+
+            while (current.HasValue)
+            {
+                path.Insert(0, nodeDict[current.Value]);
+                if (current.Value == startId)
+                    break;
+                current = previous[current.Value];
+            }
+
             return path;
         }
     }
