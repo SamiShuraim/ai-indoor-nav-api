@@ -13,6 +13,7 @@ namespace ai_indoor_nav_api.Services
         private readonly AssignmentLog _assignmentLog;
         private readonly RollingQuantileEstimator _quantileEstimator;
         private readonly RollingCounts _rollingCounts;
+        private readonly VisitorService _visitorService;
         private readonly Random _random;
         private System.Threading.Timer? _tickTimer;
 
@@ -20,7 +21,7 @@ namespace ai_indoor_nav_api.Services
         private double _alpha1Hat; // Actual recent share to L1
         private double _ageCutoff;
 
-        public LoadBalancerService()
+        public LoadBalancerService(VisitorService visitorService)
         {
             _config = new LoadBalancerConfig();
             _config.Validate();
@@ -28,6 +29,7 @@ namespace ai_indoor_nav_api.Services
             _assignmentLog = new AssignmentLog(_config.DwellMinutes, _config.TtlBufferMinutes);
             _quantileEstimator = new RollingQuantileEstimator(_config.SlidingWindowMinutes, useDecay: false, halfLifeMinutes: 45);
             _rollingCounts = new RollingCounts(_config.SlidingWindowMinutes, useDecay: false, halfLifeMinutes: 45);
+            _visitorService = visitorService;
             _random = new Random(42); // Seeded for reproducibility
 
             _alpha1 = _config.TargetAlpha1;
@@ -132,6 +134,15 @@ namespace ai_indoor_nav_api.Services
                 // Record assignment
                 _assignmentLog.Add(assignedLevel, request.Age, request.IsDisabled, now);
                 
+                // Create visitor record and get unique ID
+                string visitorId = _visitorService.CreateVisitor(
+                    request.Age, 
+                    request.IsDisabled, 
+                    assignedLevel, 
+                    now, 
+                    _config.DwellMinutes
+                );
+                
                 // Update rolling statistics
                 _rollingCounts.RecordArrival(request.IsDisabled);
                 if (!request.IsDisabled)
@@ -152,6 +163,7 @@ namespace ai_indoor_nav_api.Services
                 return new ArrivalAssignResponse
                 {
                     Level = assignedLevel,
+                    VisitorId = visitorId,
                     Decision = new DecisionInfo
                     {
                         IsDisabled = request.IsDisabled,
@@ -235,7 +247,7 @@ namespace ai_indoor_nav_api.Services
         }
 
         /// <summary>
-        /// Controller tick: adjusts alpha1 based on L1 utilization.
+        /// Controller tick: adjusts alpha1 based on L1 utilization and capacity.
         /// </summary>
         private void ControllerTick()
         {
@@ -253,13 +265,29 @@ namespace ai_indoor_nav_api.Services
                 // Compute L1 utilization
                 double util = (double)active1 / _config.L1CapSoft;
 
-                // Feedback controller
-                double error = _config.TargetUtilL1 - util;
-                _alpha1 = _alpha1 + _config.ControllerGain * error;
-
-                // Clamp alpha1
+                // Get disability rate
                 double pDisabled = _rollingCounts.GetPDisabled();
-                double lowerBound = Math.Max(_config.Alpha1Min, pDisabled);
+
+                // Capacity-aware adjustment: if we have plenty of room, be more aggressive
+                double capacityAvailable = _config.L1CapSoft - active1;
+                double capacityRatio = capacityAvailable / _config.L1CapSoft;
+                
+                // If we have lots of capacity (>30% free) and low utilization (<70%), increase alpha1 aggressively
+                if (capacityRatio > 0.30 && util < 0.70)
+                {
+                    // Boost alpha1 to use available capacity
+                    double targetAlpha1 = Math.Min(_config.Alpha1Max, pDisabled + 0.20); // Reserve 20% more for elderly
+                    _alpha1 = _alpha1 + 0.1 * (targetAlpha1 - _alpha1); // Fast adjustment
+                }
+                else
+                {
+                    // Normal feedback controller
+                    double error = _config.TargetUtilL1 - util;
+                    _alpha1 = _alpha1 + _config.ControllerGain * error;
+                }
+
+                // Clamp alpha1 with intelligent lower bound
+                double lowerBound = Math.Max(_config.Alpha1Min, pDisabled + 0.05); // Always leave 5% for elderly
                 _alpha1 = Math.Max(lowerBound, Math.Min(_config.Alpha1Max, _alpha1));
 
                 // Compute share left for old
@@ -269,9 +297,10 @@ namespace ai_indoor_nav_api.Services
 
                 // Compute age cutoff
                 var (_, _, nonDisabled) = _rollingCounts.GetCounts();
-                if (nonDisabled == 0)
+                if (nonDisabled == 0 || shareLeftForOld < 0.01)
                 {
-                    _ageCutoff = double.PositiveInfinity;
+                    // If almost no room for elderly, set a reasonable cutoff (e.g., 70)
+                    _ageCutoff = shareLeftForOld < 0.01 ? 70 : double.PositiveInfinity;
                 }
                 else
                 {
