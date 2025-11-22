@@ -395,32 +395,23 @@ namespace ai_indoor_nav_api.Controllers
             {
                 Console.WriteLine($"[NAV_TO_LEVEL] Received request:");
                 Console.WriteLine($"[NAV_TO_LEVEL] - Current Position: {request?.CurrentPosition?.Latitude}, {request?.CurrentPosition?.Longitude}");
-                Console.WriteLine($"[NAV_TO_LEVEL] - Current Level: {request?.CurrentLevel}");
                 Console.WriteLine($"[NAV_TO_LEVEL] - Target Level: {request?.TargetLevel}");
                 Console.WriteLine($"[NAV_TO_LEVEL] - Floor ID: {request?.FloorId}");
 
                 // Validate the request
-                if (request.CurrentPosition == null || request.CurrentLevel <= 0 || request.TargetLevel <= 0)
+                if (request.CurrentPosition == null || request.TargetLevel <= 0)
                 {
                     Console.WriteLine("[NAV_TO_LEVEL] ERROR: Invalid request - missing required fields");
-                    return BadRequest("Current position, current level, and target level are required.");
+                    return BadRequest("Current position and target level are required.");
                 }
 
-                // If already at target level
-                if (request.CurrentLevel == request.TargetLevel)
-                {
-                    Console.WriteLine($"[NAV_TO_LEVEL] User is already at target level {request.TargetLevel}");
-                    return Ok(new FeatureCollection());
-                }
-
-                Console.WriteLine("[NAV_TO_LEVEL] Step 1: Creating user point and finding closest node on current level...");
+                Console.WriteLine("[NAV_TO_LEVEL] Step 1: Creating user point and finding closest node (any level)...");
                 
                 // Create user point
                 var userPoint = new Point(request.CurrentPosition.Longitude, request.CurrentPosition.Latitude) { SRID = 4326 };
                 Console.WriteLine($"[NAV_TO_LEVEL] User point created: X={userPoint.X}, Y={userPoint.Y}, SRID={userPoint.SRID}");
 
-                // If FloorId is not provided, we need to find it somehow
-                // For now, we'll assume it's required or use a default
+                // If FloorId is not provided, use default
                 int floorId = request.FloorId ?? 1; // Default to floor 1 if not specified
                 
                 if (!request.FloorId.HasValue)
@@ -428,16 +419,31 @@ namespace ai_indoor_nav_api.Controllers
                     Console.WriteLine($"[NAV_TO_LEVEL] WARNING: FloorId not provided, using default floor {floorId}");
                 }
 
-                // Find the closest node to the user's current position on their current level
-                var startNode = await navigationService.FindClosestNodeByLevelAsync(userPoint, floorId, request.CurrentLevel);
+                // Find the closest node to the user's current position (ANY level or no level)
+                // User could be at a random position without a level assigned
+                var startNode = await navigationService.FindClosestNodeAsync(userPoint, floorId);
 
                 if (startNode == null)
                 {
-                    Console.WriteLine($"[NAV_TO_LEVEL] ERROR: No nodes found on floor {floorId} at level {request.CurrentLevel}");
-                    return NotFound($"No route nodes found on floor {floorId} at level {request.CurrentLevel}.");
+                    Console.WriteLine($"[NAV_TO_LEVEL] ERROR: No nodes found on floor {floorId}");
+                    return NotFound($"No route nodes found on floor {floorId}.");
                 }
 
-                Console.WriteLine($"[NAV_TO_LEVEL] Found start node: ID={startNode.Id}, Level={startNode.Level}");
+                Console.WriteLine($"[NAV_TO_LEVEL] Found start node: ID={startNode.Id}, Level={startNode.Level ?? -1}");
+
+                // Check if we're already at a node on the target level
+                if (startNode.Level.HasValue && startNode.Level.Value == request.TargetLevel)
+                {
+                    Console.WriteLine($"[NAV_TO_LEVEL] User is already at target level {request.TargetLevel}");
+                    // Return a single-node path (the current position)
+                    var singleNodePath = new FeatureCollection();
+                    var feature = startNode.ToGeoJsonFeature();
+                    feature.Attributes.Add("path_order", 0);
+                    feature.Attributes.Add("is_path_node", true);
+                    feature.Attributes.Add("node_level", startNode.Level.Value);
+                    singleNodePath.Add(feature);
+                    return Ok(singleNodePath);
+                }
 
                 Console.WriteLine("[NAV_TO_LEVEL] Step 2: Finding cross-level path...");
                 
@@ -447,7 +453,7 @@ namespace ai_indoor_nav_api.Controllers
                 if (path == null || path.Count == 0)
                 {
                     Console.WriteLine("[NAV_TO_LEVEL] ERROR: No path found to target level");
-                    return NotFound($"No path found from level {request.CurrentLevel} to level {request.TargetLevel}.");
+                    return NotFound($"No path found from current position to level {request.TargetLevel}.");
                 }
 
                 Console.WriteLine($"[NAV_TO_LEVEL] SUCCESS: Path found with {path.Count} nodes");

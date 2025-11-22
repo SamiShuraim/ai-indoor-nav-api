@@ -11,19 +11,13 @@ namespace ai_indoor_nav_api.Models
         public LocationPoint? CurrentPosition { get; set; }
 
         /// <summary>
-        /// Current level of the user (1, 2, 3, etc.)
-        /// </summary>
-        [Required]
-        public int CurrentLevel { get; set; }
-
-        /// <summary>
         /// Target level to navigate to (1, 2, 3, etc.)
         /// </summary>
         [Required]
         public int TargetLevel { get; set; }
 
         /// <summary>
-        /// Optional: Floor ID if known, otherwise will be inferred from level
+        /// Optional: Floor ID if known, otherwise will default to floor 1
         /// </summary>
         public int? FloorId { get; set; }
     }
