@@ -3,6 +3,7 @@ namespace ai_indoor_nav_api.Models
     public class ArrivalAssignResponse
     {
         public int Level { get; set; }
+        public string VisitorId { get; set; } = string.Empty;
         public DecisionInfo Decision { get; set; } = new();
         public string TraceId { get; set; } = string.Empty;
     }

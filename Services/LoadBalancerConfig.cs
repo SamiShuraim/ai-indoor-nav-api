@@ -15,10 +15,10 @@ namespace ai_indoor_nav_api.Services
         public double DwellMinutes { get; set; } = 45.0;
         public double TtlBufferMinutes { get; set; } = 0.0;
 
-        // Target alpha1 (steady-state share)
-        public double TargetAlpha1 { get; set; } = 0.0769; // 500 / (500+3000+3000)
-        public double Alpha1Min { get; set; } = 0.05;
-        public double Alpha1Max { get; set; } = 0.12;
+        // Target alpha1 (steady-state share) - capacity-aware
+        public double TargetAlpha1 { get; set; } = 0.35; // Capacity-based: use L1 effectively
+        public double Alpha1Min { get; set; } = 0.20; // At least 20% to L1 (for disabled)
+        public double Alpha1Max { get; set; } = 0.50; // Up to 50% to L1 when utilization is low
 
         // Controller
         public double TargetUtilL1 { get; set; } = 0.90;

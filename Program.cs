@@ -67,6 +67,8 @@ builder.Services.AddDbContext<MyDbContext>(options =>
 
 // Register navigation service
 builder.Services.AddScoped<NavigationService>();
+// Register visitor service as singleton to track visitor IDs
+builder.Services.AddSingleton<VisitorService>();
 // Register load balancer service as singleton to maintain state across requests
 builder.Services.AddSingleton<LoadBalancerService>();
 builder.Services.AddAuthentication(options =>
