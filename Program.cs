@@ -71,6 +71,8 @@ builder.Services.AddScoped<NavigationService>();
 builder.Services.AddSingleton<VisitorService>();
 // Register load balancer service as singleton to maintain state across requests
 builder.Services.AddSingleton<LoadBalancerService>();
+// Register HTTP cache service for ETag generation and cache validation
+builder.Services.AddSingleton<HttpCacheService>();
 builder.Services.AddAuthentication(options =>
     {
         options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;

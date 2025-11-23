@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ai_indoor_nav_api.Data;
 using ai_indoor_nav_api.Enums;
+using ai_indoor_nav_api.Filters;
 using ai_indoor_nav_api.Models;
 using ai_indoor_nav_api.Services;
 using NetTopologySuite.Features;
@@ -18,6 +19,7 @@ namespace ai_indoor_nav_api.Controllers
     public class PoiController(MyDbContext context, NavigationService navigationService) : ControllerBase
     {
         [HttpGet]
+        [HttpCache(Duration = 300, VaryByQuery = true)]
         public async Task<ActionResult<FeatureCollection>> GetPois([FromQuery] int? floor, [FromQuery] int? building)
         {
             var query = context.Pois.Include(p => p.Floor).AsQueryable();
@@ -39,6 +41,7 @@ namespace ai_indoor_nav_api.Controllers
         
         // GET: api/Poi/5
         [HttpGet("{id}")]
+        [HttpCache(Duration = 300)]
         public async Task<IActionResult> GetPoi(int id)
         {
             var poi = await context.Pois.FindAsync(id);
