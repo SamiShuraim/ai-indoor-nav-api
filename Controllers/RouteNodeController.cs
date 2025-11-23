@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ai_indoor_nav_api.Data;
+using ai_indoor_nav_api.Filters;
 using ai_indoor_nav_api.Models;
 using ai_indoor_nav_api.Services;
 using NetTopologySuite.Features;
@@ -22,6 +23,7 @@ namespace ai_indoor_nav_api.Controllers
     {
         // GET: api/RouteNode?floor=1&building=3
         [HttpGet]
+        [HttpCache(Duration = 300, VaryByQuery = true)]
         public async Task<ActionResult<FeatureCollection>> GetRouteNodes([FromQuery] int? floor, [FromQuery] int? building)
         {
             var query = context.RouteNodes.AsQueryable();
@@ -42,6 +44,7 @@ namespace ai_indoor_nav_api.Controllers
 
         // GET: api/RouteNode/5
         [HttpGet("{id}")]
+        [HttpCache(Duration = 300)]
         public async Task<ActionResult<Feature>> GetRouteNode(int id)
         {
             var routeNode = await context.RouteNodes.FindAsync(id);

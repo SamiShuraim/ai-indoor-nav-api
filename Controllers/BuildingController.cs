@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ai_indoor_nav_api.Data;
+using ai_indoor_nav_api.Filters;
 using ai_indoor_nav_api.Models;
 
 namespace ai_indoor_nav_api.Controllers
@@ -17,6 +18,7 @@ namespace ai_indoor_nav_api.Controllers
     {
         // GET: api/Building
         [HttpGet]
+        [HttpCache(Duration = 600)] // Buildings change less frequently, cache for 10 minutes
         public async Task<ActionResult<IEnumerable<Building>>> GetBuildings()
         {
             return await context.Buildings.ToListAsync();
@@ -24,6 +26,7 @@ namespace ai_indoor_nav_api.Controllers
 
         // GET: api/Building/5
         [HttpGet("{id}")]
+        [HttpCache(Duration = 600)]
         public async Task<ActionResult<Building>> GetBuilding(int id)
         {
             var building = await context.Buildings.FindAsync(id);
