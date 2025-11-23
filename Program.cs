@@ -35,12 +35,20 @@ else
 builder.Services.AddControllers(options =>
     {
     })
+    .AddJsonOptions(options =>
+    {
+        // Configure System.Text.Json to handle circular references
+        options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
+        options.JsonSerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull;
+    })
     .AddNewtonsoftJson(opts =>
     {
         opts.SerializerSettings.Converters.Add(new FeatureJsonConverter());
         opts.SerializerSettings.Converters.Add(new GeometryConverter());
         opts.SerializerSettings.NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore;
         opts.SerializerSettings.ContractResolver = new Newtonsoft.Json.Serialization.CamelCasePropertyNamesContractResolver();
+        // Configure Newtonsoft.Json to handle circular references too
+        opts.SerializerSettings.ReferenceLoopHandling = Newtonsoft.Json.ReferenceLoopHandling.Ignore;
     });
 
 

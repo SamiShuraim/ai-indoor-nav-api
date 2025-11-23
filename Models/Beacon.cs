@@ -5,6 +5,7 @@ using Newtonsoft.Json;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.Features;
 using Newtonsoft.Json.Linq;
+using System.Text.Json.Serialization;
 
 namespace ai_indoor_nav_api.Models
 {
@@ -33,7 +34,8 @@ namespace ai_indoor_nav_api.Models
         [Column("range_meters", TypeName = "numeric(6,2)")]
         public decimal? RangeMeters { get; set; }
 
-        [JsonIgnore]
+        [Newtonsoft.Json.JsonIgnore]
+        [System.Text.Json.Serialization.JsonIgnore]
         public ICollection<Beacon> Beacons { get; set; } = new List<Beacon>();
     }
 
@@ -76,7 +78,7 @@ namespace ai_indoor_nav_api.Models
         [Column("updated_at")] public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
         // Navigation properties for EF Core
-        [ForeignKey("FloorId")] [JsonIgnore] public Floor? Floor { get; set; }
+        [ForeignKey("FloorId")] [Newtonsoft.Json.JsonIgnore] [System.Text.Json.Serialization.JsonIgnore] public Floor? Floor { get; set; }
 
         [ForeignKey("BeaconTypeId")] public BeaconType? BeaconType { get; set; }
     }
