@@ -40,6 +40,8 @@ builder.Services.AddControllers(options =>
         // Configure System.Text.Json to handle circular references
         options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
         options.JsonSerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull;
+        // Add NetTopologySuite GeoJSON converter for proper geometry serialization
+        options.JsonSerializerOptions.Converters.Add(new GeoJsonConverterFactory());
     })
     .AddNewtonsoftJson(opts =>
     {
