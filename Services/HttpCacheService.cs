@@ -27,7 +27,9 @@ namespace ai_indoor_nav_api.Services
             {
                 // Ensure consistent serialization regardless of property order
                 WriteIndented = false,
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                // Allow infinity and NaN values in JSON serialization
+                NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowNamedFloatingPointLiterals
             });
 
             return GenerateETagFromString(json);
