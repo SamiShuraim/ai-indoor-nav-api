@@ -30,6 +30,31 @@ namespace ai_indoor_nav_api.Models
         [Column("level")]
         public int? Level { get; set; } = null;
 
+        /// <summary>
+        /// Marks this node as a connection point between different levels (elevator, stairs, ramp)
+        /// </summary>
+        [Column("is_connection_point")]
+        public bool IsConnectionPoint { get; set; } = false;
+
+        /// <summary>
+        /// Type of connection: 'elevator', 'stairs', 'ramp', 'escalator', or null
+        /// </summary>
+        [Column("connection_type")]
+        [StringLength(50)]
+        public string? ConnectionType { get; set; } = null;
+
+        /// <summary>
+        /// Which levels this connection point connects to (for quick lookup)
+        /// </summary>
+        [Column("connected_levels", TypeName = "integer[]")]
+        public List<int> ConnectedLevels { get; set; } = new();
+
+        /// <summary>
+        /// Priority for routing (lower = preferred). Elevators = 1, Stairs = 2, Ramps = 3
+        /// </summary>
+        [Column("connection_priority")]
+        public int? ConnectionPriority { get; set; } = null;
+
         [Column("created_at")]
         public DateTime CreatedAt { get; set; } = UtcNow;
 

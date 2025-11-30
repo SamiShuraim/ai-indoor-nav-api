@@ -106,10 +106,21 @@ builder.Services.AddDbContext<MyDbContext>(options =>
     .EnableDetailedErrors(builder.Environment.IsDevelopment())
 );
 
+// Add memory cache for node caching
+builder.Services.AddMemoryCache();
+
+// Register node cache service as singleton (shares cache across requests)
+builder.Services.AddSingleton<NodeCacheService>();
+
+// Register connection point detection service
+builder.Services.AddScoped<ConnectionPointDetectionService>();
+
 // Register navigation service
 builder.Services.AddScoped<NavigationService>();
+
 // Register visitor service as singleton to track visitor IDs
 builder.Services.AddSingleton<VisitorService>();
+
 // Register load balancer service as singleton to maintain state across requests
 builder.Services.AddSingleton<LoadBalancerService>();
 builder.Services.AddAuthentication(options =>
