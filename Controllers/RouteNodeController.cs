@@ -131,7 +131,7 @@ namespace ai_indoor_nav_api.Controllers
                 return BadRequest(errorMessage);
 
             // Validate foreign keys early to avoid 500s from the database layer
-            var floorExists = await context.Floors.AnyAsync(f => f.Id == node.FloorId);
+            var floorExists = await context.Floors.AsNoTracking().AnyAsync(f => f.Id == node.FloorId);
             if (!floorExists)
             {
                 return BadRequest($"Invalid floor_id {node.FloorId}: floor does not exist");
@@ -180,6 +180,7 @@ namespace ai_indoor_nav_api.Controllers
                 Console.WriteLine("[FINDPATH] Step 1: Looking up destination POI...");
                 // Find the destination POI
                 var destinationPoi = await context.Pois
+                    .AsNoTracking()
                     .Include(p => p.ClosestNode)
                     .FirstOrDefaultAsync(p => p.Id == request.DestinationPoiId);
 
@@ -305,7 +306,7 @@ namespace ai_indoor_nav_api.Controllers
                 Console.WriteLine($"[FIX_CONNECTIONS] Received request for floor ID: {request.FloorId}");
 
                 // Validate floor exists
-                var floorExists = await context.Floors.AnyAsync(f => f.Id == request.FloorId);
+                var floorExists = await context.Floors.AsNoTracking().AnyAsync(f => f.Id == request.FloorId);
                 if (!floorExists)
                 {
                     Console.WriteLine($"[FIX_CONNECTIONS] ERROR: Floor {request.FloorId} does not exist");
@@ -407,8 +408,10 @@ namespace ai_indoor_nav_api.Controllers
 
                 Console.WriteLine("[NAV_TO_LEVEL] Step 1: Loading start node...");
                 
-                // Get the start node directly
-                var startNode = await context.RouteNodes.FindAsync(request.CurrentNodeId);
+                // Get the start node directly (AsNoTracking for read-only query)
+                var startNode = await context.RouteNodes
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(rn => rn.Id == request.CurrentNodeId);
 
                 if (startNode == null)
                 {

@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using ai_indoor_nav_api.Models;
 
@@ -9,6 +9,14 @@ namespace ai_indoor_nav_api.Data
         public MyDbContext(DbContextOptions<MyDbContext> options)
             : base(options)
         {
+        }
+
+        protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+        {
+            base.OnConfiguring(optionsBuilder);
+            
+            // Set default query timeout to 60 seconds
+            optionsBuilder.UseQueryTrackingBehavior(QueryTrackingBehavior.TrackAll);
         }
 
         protected override void OnModelCreating(ModelBuilder builder)

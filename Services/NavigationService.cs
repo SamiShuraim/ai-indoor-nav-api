@@ -164,8 +164,9 @@ namespace ai_indoor_nav_api.Services
                 Console.WriteLine($"[NAV_SERVICE] Processing {poisOnFloor.Count} POIs on floor {currentFloorId}");
                 reportLines.Add($"Processing {poisOnFloor.Count} POIs on floor {currentFloorId}");
                 
-                // Get all visible nodes on this floor
+                // Get all visible nodes on this floor (read-only for distance calculation)
                 var nodesOnFloor = await _context.RouteNodes
+                    .AsNoTracking()
                     .Where(n => n.FloorId == currentFloorId && n.IsVisible)
                     .ToListAsync();
                 
@@ -262,6 +263,7 @@ namespace ai_indoor_nav_api.Services
             Console.WriteLine($"[NAV_SERVICE] - Location: X={location.X}, Y={location.Y}, FloorId={floorId}");
             
             var nodesOnFloor = await _context.RouteNodes
+                .AsNoTracking()
                 .Where(n => n.FloorId == floorId && n.IsVisible)
                 .ToListAsync();
 
@@ -310,6 +312,7 @@ namespace ai_indoor_nav_api.Services
             Console.WriteLine($"[NAV_SERVICE] - Location: X={location.X}, Y={location.Y}, FloorId={floorId}, Level={level}");
             
             var nodesOnFloor = await _context.RouteNodes
+                .AsNoTracking()
                 .Where(n => n.FloorId == floorId && n.IsVisible && n.Level == level)
                 .ToListAsync();
 
@@ -377,6 +380,7 @@ namespace ai_indoor_nav_api.Services
             }
 
             var allNodes = await _context.RouteNodes
+                .AsNoTracking()
                 .Where(n => n.FloorId == startNode.FloorId && n.IsVisible)
                 .ToListAsync();
 
@@ -536,6 +540,7 @@ namespace ai_indoor_nav_api.Services
             // NOTE: Cross-level navigation may require traversing nodes on different floors
             // (e.g., stairs/elevators connecting different floors), so we need to load all nodes
             var allNodes = await _context.RouteNodes
+                .AsNoTracking()
                 .Where(n => n.IsVisible)
                 .ToListAsync();
             
