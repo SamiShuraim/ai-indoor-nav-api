@@ -18,13 +18,29 @@ namespace ai_indoor_nav_api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class RouteNodeController(MyDbContext context, NavigationService navigationService) : ControllerBase
+    public class RouteNodeController : ControllerBase
     {
+        private readonly MyDbContext _context;
+        private readonly NavigationService _navigationService;
+        private readonly NodeCacheService _cacheService;
+        private readonly ConnectionPointDetectionService _connectionDetectionService;
+
+        public RouteNodeController(
+            MyDbContext context, 
+            NavigationService navigationService,
+            NodeCacheService cacheService,
+            ConnectionPointDetectionService connectionDetectionService)
+        {
+            _context = context;
+            _navigationService = navigationService;
+            _cacheService = cacheService;
+            _connectionDetectionService = connectionDetectionService;
+        }
         // GET: api/RouteNode?floor=1&building=3
         [HttpGet]
         public async Task<ActionResult<FeatureCollection>> GetRouteNodes([FromQuery] int? floor, [FromQuery] int? building)
         {
-            var query = context.RouteNodes.AsQueryable();
+            var query = _context.RouteNodes.AsQueryable();
 
             if (floor.HasValue)
             {
@@ -44,7 +60,7 @@ namespace ai_indoor_nav_api.Controllers
         [HttpGet("{id}")]
         public async Task<ActionResult<Feature>> GetRouteNode(int id)
         {
-            var routeNode = await context.RouteNodes.FindAsync(id);
+            var routeNode = await _context.RouteNodes.FindAsync(id);
 
             if (routeNode == null)
             {
@@ -58,7 +74,7 @@ namespace ai_indoor_nav_api.Controllers
         [HttpPut("{id}")]
         public async Task<IActionResult> UpdateRouteNode(int id)
         {
-            var node = await context.RouteNodes.FindAsync(id);
+            var node = await _context.RouteNodes.FindAsync(id);
             if (node == null) return NotFound();
 
             try
@@ -104,7 +120,11 @@ namespace ai_indoor_nav_api.Controllers
                     node.PopulateFromJson(jsonElement);
                 }
 
-                await context.SaveChangesAsync();
+                await _context.SaveChangesAsync();
+                
+                // Invalidate cache for this floor
+                _cacheService.InvalidateFloor(node.FloorId);
+                
                 return NoContent();
             }
             catch (JsonException ex)
@@ -131,14 +151,17 @@ namespace ai_indoor_nav_api.Controllers
                 return BadRequest(errorMessage);
 
             // Validate foreign keys early to avoid 500s from the database layer
-            var floorExists = await context.Floors.AsNoTracking().AnyAsync(f => f.Id == node.FloorId);
+            var floorExists = await _context.Floors.AsNoTracking().AnyAsync(f => f.Id == node.FloorId);
             if (!floorExists)
             {
                 return BadRequest($"Invalid floor_id {node.FloorId}: floor does not exist");
             }
 
-            context.RouteNodes.Add(node);
-            await context.SaveChangesAsync();
+            _context.RouteNodes.Add(node);
+            await _context.SaveChangesAsync();
+
+            // Invalidate cache for this floor
+            _cacheService.InvalidateFloor(node.FloorId);
 
             return CreatedAtAction(nameof(GetRouteNode), new { id = node.Id }, node.ToGeoJsonFeature());
         }
@@ -147,14 +170,19 @@ namespace ai_indoor_nav_api.Controllers
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteRouteNode(int id)
         {
-            var routeNode = await context.RouteNodes.FindAsync(id);
+            var routeNode = await _context.RouteNodes.FindAsync(id);
             if (routeNode == null)
             {
                 return NotFound();
             }
 
-            context.RouteNodes.Remove(routeNode);
-            await context.SaveChangesAsync();
+            var floorId = routeNode.FloorId;
+            
+            _context.RouteNodes.Remove(routeNode);
+            await _context.SaveChangesAsync();
+
+            // Invalidate cache for this floor
+            _cacheService.InvalidateFloor(floorId);
 
             return NoContent();
         }
@@ -179,7 +207,7 @@ namespace ai_indoor_nav_api.Controllers
 
                 Console.WriteLine("[FINDPATH] Step 1: Looking up destination POI...");
                 // Find the destination POI
-                var destinationPoi = await context.Pois
+                var destinationPoi = await _context.Pois
                     .AsNoTracking()
                     .Include(p => p.ClosestNode)
                     .FirstOrDefaultAsync(p => p.Id == request.DestinationPoiId);
@@ -205,7 +233,7 @@ namespace ai_indoor_nav_api.Controllers
                 var userPoint = new Point(request.UserLocation.Longitude, request.UserLocation.Latitude) { SRID = 4326 };
                 Console.WriteLine($"[FINDPATH] User point created: X={userPoint.X}, Y={userPoint.Y}, SRID={userPoint.SRID}");
                 
-                var startNode = await navigationService.FindClosestNodeAsync(userPoint, destinationPoi.FloorId);
+                var startNode = await _navigationService.FindClosestNodeAsync(userPoint, destinationPoi.FloorId);
 
                 if (startNode == null)
                 {
@@ -220,7 +248,7 @@ namespace ai_indoor_nav_api.Controllers
                 Console.WriteLine($"[FINDPATH] Path from Start Node {startNode.Id} to End Node {destinationPoi.ClosestNodeId.Value}");
                 
                 // Find the shortest path
-                var path = await navigationService.FindShortestPathAsync(startNode.Id, destinationPoi.ClosestNodeId.Value);
+                var path = await _navigationService.FindShortestPathAsync(startNode.Id, destinationPoi.ClosestNodeId.Value);
 
                 if (path == null || path.Count == 0)
                 {
@@ -306,7 +334,7 @@ namespace ai_indoor_nav_api.Controllers
                 Console.WriteLine($"[FIX_CONNECTIONS] Received request for floor ID: {request.FloorId}");
 
                 // Validate floor exists
-                var floorExists = await context.Floors.AsNoTracking().AnyAsync(f => f.Id == request.FloorId);
+                var floorExists = await _context.Floors.AsNoTracking().AnyAsync(f => f.Id == request.FloorId);
                 if (!floorExists)
                 {
                     Console.WriteLine($"[FIX_CONNECTIONS] ERROR: Floor {request.FloorId} does not exist");
@@ -316,7 +344,10 @@ namespace ai_indoor_nav_api.Controllers
                 Console.WriteLine($"[FIX_CONNECTIONS] Floor {request.FloorId} exists, proceeding with bidirectional fix...");
 
                 // Call the navigation service to fix bidirectional connections
-                var (fixedConnections, report) = await navigationService.FixBidirectionalConnectionsAsync(request.FloorId);
+                var (fixedConnections, report) = await _navigationService.FixBidirectionalConnectionsAsync(request.FloorId);
+                
+                // Invalidate cache for this floor
+                _cacheService.InvalidateFloor(request.FloorId);
 
                 Console.WriteLine($"[FIX_CONNECTIONS] Fix completed: {fixedConnections} connections fixed");
                 Console.WriteLine("=== FIX BIDIRECTIONAL CONNECTIONS ENDPOINT COMPLETED ===");
@@ -351,8 +382,8 @@ namespace ai_indoor_nav_api.Controllers
             try
             {
                 // 1. Get both nodes from database
-                var node1 = await context.RouteNodes.FindAsync(request.NodeId1);
-                var node2 = await context.RouteNodes.FindAsync(request.NodeId2);
+                var node1 = await _context.RouteNodes.FindAsync(request.NodeId1);
+                var node2 = await _context.RouteNodes.FindAsync(request.NodeId2);
                 
                 if (node1 == null || node2 == null)
                 {
@@ -377,7 +408,14 @@ namespace ai_indoor_nav_api.Controllers
                 }
 
                 // 4. Save changes
-                await context.SaveChangesAsync();
+                await _context.SaveChangesAsync();
+                
+                // Invalidate caches
+                _cacheService.InvalidateFloor(node1.FloorId);
+                if (node2.FloorId != node1.FloorId)
+                {
+                    _cacheService.InvalidateFloor(node2.FloorId);
+                }
                 
                 return Ok();
             }
@@ -409,7 +447,7 @@ namespace ai_indoor_nav_api.Controllers
                 Console.WriteLine("[NAV_TO_LEVEL] Step 1: Loading start node...");
                 
                 // Get the start node directly (AsNoTracking for read-only query)
-                var startNode = await context.RouteNodes
+                var startNode = await _context.RouteNodes
                     .AsNoTracking()
                     .FirstOrDefaultAsync(rn => rn.Id == request.CurrentNodeId);
 
@@ -446,7 +484,7 @@ namespace ai_indoor_nav_api.Controllers
                 Console.WriteLine("[NAV_TO_LEVEL] Step 2: Finding cross-level path...");
                 
                 // Find the path to the target level
-                var path = await navigationService.FindCrossLevelPathAsync(startNode.Id, request.TargetLevel, floorId);
+                var path = await _navigationService.FindCrossLevelPathAsync(startNode.Id, request.TargetLevel, floorId);
 
                 if (path == null || path.Count == 0)
                 {
@@ -541,9 +579,108 @@ namespace ai_indoor_nav_api.Controllers
             }
         }
 
+        // POST: api/RouteNode/detectConnectionPoints
+        [HttpPost("detectConnectionPoints")]
+        public async Task<ActionResult<object>> DetectConnectionPoints([FromQuery] int? floorId = null)
+        {
+            Console.WriteLine("=== DETECT CONNECTION POINTS ENDPOINT STARTED ===");
+            try
+            {
+                Console.WriteLine($"[DETECT_CONN] Starting detection for {(floorId.HasValue ? $"floor {floorId}" : "all floors")}");
+
+                var (detected, report) = await _connectionDetectionService.DetectAndMarkConnectionPointsAsync(floorId);
+
+                Console.WriteLine($"[DETECT_CONN] Detection completed: {detected} connection points detected");
+                Console.WriteLine("=== DETECT CONNECTION POINTS ENDPOINT COMPLETED ===");
+
+                return Ok(new
+                {
+                    success = true,
+                    detectedCount = detected,
+                    floorId = floorId,
+                    report = report,
+                    timestamp = DateTime.UtcNow
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[DETECT_CONN] EXCEPTION: {ex.Message}");
+                Console.WriteLine($"[DETECT_CONN] STACK TRACE: {ex.StackTrace}");
+                Console.WriteLine("=== DETECT CONNECTION POINTS ENDPOINT FAILED ===");
+                return StatusCode(500, new
+                {
+                    success = false,
+                    error = $"Internal server error: {ex.Message}",
+                    timestamp = DateTime.UtcNow
+                });
+            }
+        }
+
+        // GET: api/RouteNode/connectionPoints
+        [HttpGet("connectionPoints")]
+        public async Task<ActionResult<FeatureCollection>> GetConnectionPoints()
+        {
+            var connectionPoints = await _cacheService.GetConnectionPointsAsync();
+            
+            var features = new FeatureCollection();
+            foreach (var node in connectionPoints)
+            {
+                var feature = node.ToGeoJsonFeature();
+                feature.Attributes.Add("is_connection_point", true);
+                feature.Attributes.Add("connection_type", node.ConnectionType);
+                feature.Attributes.Add("connection_priority", node.ConnectionPriority);
+                feature.Attributes.Add("connected_levels", node.ConnectedLevels);
+                features.Add(feature);
+            }
+
+            return Ok(features);
+        }
+
+        // POST: api/RouteNode/invalidateCache
+        [HttpPost("invalidateCache")]
+        public ActionResult<object> InvalidateCache([FromQuery] int? floorId = null)
+        {
+            if (floorId.HasValue)
+            {
+                _cacheService.InvalidateFloor(floorId.Value);
+                return Ok(new
+                {
+                    success = true,
+                    message = $"Cache invalidated for floor {floorId}",
+                    timestamp = DateTime.UtcNow
+                });
+            }
+            else
+            {
+                _cacheService.InvalidateAll();
+                return Ok(new
+                {
+                    success = true,
+                    message = "All caches invalidated",
+                    timestamp = DateTime.UtcNow
+                });
+            }
+        }
+
+        // GET: api/RouteNode/cacheStatistics
+        [HttpGet("cacheStatistics")]
+        public ActionResult<object> GetCacheStatistics()
+        {
+            var (hits, misses, hitRate) = _cacheService.GetStatistics();
+            
+            return Ok(new
+            {
+                cacheHits = hits,
+                cacheMisses = misses,
+                totalRequests = hits + misses,
+                hitRate = $"{hitRate:F2}%",
+                timestamp = DateTime.UtcNow
+            });
+        }
+
         private bool RouteNodeExists(int id)
         {
-            return context.RouteNodes.Any(e => e.Id == id);
+            return _context.RouteNodes.Any(e => e.Id == id);
         }
     }
 }

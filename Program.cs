@@ -62,15 +62,21 @@ builder.Services.AddCors(options =>
 var connectionString = Environment.GetEnvironmentVariable("DEFAULT_CONNECTION");
 var connectionStringBuilder = new Npgsql.NpgsqlConnectionStringBuilder(connectionString)
 {
-    // Connection pooling settings
-    MaxPoolSize = 100,              // Maximum connections in pool (default 100)
-    MinPoolSize = 10,               // Keep minimum connections alive (default 1)
+    // Connection pooling settings - optimized for Supabase pooler
+    MaxPoolSize = 50,               // Reduced for pooler usage (pooler handles connection pooling)
+    MinPoolSize = 5,                // Lower minimum for pooler
     ConnectionIdleLifetime = 300,   // Close idle connections after 5 minutes
     ConnectionPruningInterval = 10, // Check for idle connections every 10 seconds
     
-    // Timeout settings
-    Timeout = 30,                   // Connection timeout in seconds (default 15)
-    CommandTimeout = 60,            // Command execution timeout in seconds (default 30)
+    // Timeout settings - increased for transient connection issues
+    Timeout = 60,                   // Increased connection timeout from 30 to 60 seconds
+    CommandTimeout = 90,            // Increased command timeout from 60 to 90 seconds
+    
+    // Resilience settings
+    KeepAlive = 30,                 // Send keepalive every 30 seconds
+    TcpKeepAlive = true,            // Enable TCP keepalive
+    TcpKeepAliveTime = 30,          // TCP keepalive time in seconds
+    TcpKeepAliveInterval = 10,      // TCP keepalive interval in seconds
     
     // Performance settings
     NoResetOnClose = false,         // Reset connection state on close for safety
@@ -83,15 +89,15 @@ builder.Services.AddDbContext<MyDbContext>(options =>
         npgsqlOptions => {
             npgsqlOptions.UseNetTopologySuite();
             
-            // Configure retry logic for transient failures
+            // Configure aggressive retry logic for transient failures with exponential backoff
             npgsqlOptions.EnableRetryOnFailure(
-                maxRetryCount: 5,
-                maxRetryDelay: TimeSpan.FromSeconds(10),
-                errorCodesToAdd: null
+                maxRetryCount: 6,                           // Increased from 5 to 6
+                maxRetryDelay: TimeSpan.FromSeconds(30),    // Increased from 10 to 30 seconds max delay
+                errorCodesToAdd: null                       // Use default Npgsql transient error codes
             );
             
-            // Set command timeout (same as connection string for consistency)
-            npgsqlOptions.CommandTimeout(60);
+            // Set command timeout (increased for complex queries)
+            npgsqlOptions.CommandTimeout(90);
         }
     )
     // Disable sensitive data logging in production for security
@@ -100,10 +106,21 @@ builder.Services.AddDbContext<MyDbContext>(options =>
     .EnableDetailedErrors(builder.Environment.IsDevelopment())
 );
 
+// Add memory cache for node caching
+builder.Services.AddMemoryCache();
+
+// Register node cache service as singleton (shares cache across requests)
+builder.Services.AddSingleton<NodeCacheService>();
+
+// Register connection point detection service
+builder.Services.AddScoped<ConnectionPointDetectionService>();
+
 // Register navigation service
 builder.Services.AddScoped<NavigationService>();
+
 // Register visitor service as singleton to track visitor IDs
 builder.Services.AddSingleton<VisitorService>();
+
 // Register load balancer service as singleton to maintain state across requests
 builder.Services.AddSingleton<LoadBalancerService>();
 builder.Services.AddAuthentication(options =>
