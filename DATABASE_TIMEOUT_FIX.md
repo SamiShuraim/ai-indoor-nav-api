@@ -162,6 +162,7 @@ Ensure your Supabase/PostgreSQL server can handle the connection load:
 - Use connection pooling on the database side (PgBouncer) for enterprise scale
 
 ## Related Documentation
+- `TRANSIENT_CONNECTION_ERROR_FIX.md` - **Enhanced retry strategy for transient connection errors**
 - `USE_SUPABASE_POOLER.md` - Supabase pooler configuration
 - `SUPABASE_MIGRATION.md` - Database migration guide
 - [Npgsql Connection Pooling](https://www.npgsql.org/doc/connection-string-parameters.html#pooling)
