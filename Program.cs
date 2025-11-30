@@ -186,6 +186,8 @@ using (var scope = app.Services.CreateScope())
 
     async Task SeedUsersAsync()
     {
+        Console.WriteLine("Starting user seeding process...");
+        
         var users = new[]
         {
             new { 
@@ -205,23 +207,58 @@ using (var scope = app.Services.CreateScope())
             }
         };
 
-
         foreach (var u in users)
         {
-            var userExists = await userManager.FindByNameAsync(u.UserName);
-            if (userExists == null)
+            // Skip if any required field is missing
+            if (string.IsNullOrEmpty(u.UserName) || string.IsNullOrEmpty(u.Email) || string.IsNullOrEmpty(u.Password))
             {
-                var user = new IdentityUser { UserName = u.UserName, Email = u.Email, EmailConfirmed = true };
-                var result = await userManager.CreateAsync(user, u.Password);
-                if (!result.Succeeded)
+                Console.WriteLine($"WARNING: Skipping user creation - missing credentials for user configuration");
+                continue;
+            }
+
+            try
+            {
+                Console.WriteLine($"Checking if user {u.UserName} exists...");
+                var userExists = await userManager.FindByNameAsync(u.UserName);
+                if (userExists == null)
                 {
-                    throw new Exception($"Failed to create user {u.UserName}: {string.Join(", ", result.Errors)}");
+                    Console.WriteLine($"Creating user: {u.UserName}");
+                    var user = new IdentityUser { UserName = u.UserName, Email = u.Email, EmailConfirmed = true };
+                    var result = await userManager.CreateAsync(user, u.Password);
+                    if (result.Succeeded)
+                    {
+                        Console.WriteLine($"Successfully created user: {u.UserName}");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"WARNING: Failed to create user {u.UserName}: {string.Join(", ", result.Errors.Select(e => e.Description))}");
+                    }
+                }
+                else
+                {
+                    Console.WriteLine($"User {u.UserName} already exists, skipping creation");
                 }
             }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"ERROR creating user {u.UserName}: {ex.Message}");
+                // Continue with next user instead of crashing
+            }
         }
+        
+        Console.WriteLine("User seeding process completed");
     }
 
-    await SeedUsersAsync();
+    try
+    {
+        await SeedUsersAsync();
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"CRITICAL ERROR during user seeding: {ex.Message}");
+        Console.WriteLine($"Stack trace: {ex.StackTrace}");
+        // Don't crash the application - allow it to start even if user seeding fails
+    }
 }
 
 // Configure the HTTP request pipeline.
