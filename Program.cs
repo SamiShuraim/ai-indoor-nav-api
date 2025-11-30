@@ -58,11 +58,46 @@ builder.Services.AddCors(options =>
     });
 });
 
+// Configure connection string with proper pooling and timeout settings
+var connectionString = Environment.GetEnvironmentVariable("DEFAULT_CONNECTION");
+var connectionStringBuilder = new Npgsql.NpgsqlConnectionStringBuilder(connectionString)
+{
+    // Connection pooling settings
+    MaxPoolSize = 100,              // Maximum connections in pool (default 100)
+    MinPoolSize = 10,               // Keep minimum connections alive (default 1)
+    ConnectionIdleLifetime = 300,   // Close idle connections after 5 minutes
+    ConnectionPruningInterval = 10, // Check for idle connections every 10 seconds
+    
+    // Timeout settings
+    Timeout = 30,                   // Connection timeout in seconds (default 15)
+    CommandTimeout = 60,            // Command execution timeout in seconds (default 30)
+    
+    // Performance settings
+    NoResetOnClose = false,         // Reset connection state on close for safety
+    Pooling = true                  // Ensure pooling is enabled
+};
+
 builder.Services.AddDbContext<MyDbContext>(options =>
     options.UseNpgsql(
-        Environment.GetEnvironmentVariable("DEFAULT_CONNECTION"),
-        npgsqlOptions => npgsqlOptions.UseNetTopologySuite()
+        connectionStringBuilder.ToString(),
+        npgsqlOptions => {
+            npgsqlOptions.UseNetTopologySuite();
+            
+            // Configure retry logic for transient failures
+            npgsqlOptions.EnableRetryOnFailure(
+                maxRetryCount: 5,
+                maxRetryDelay: TimeSpan.FromSeconds(10),
+                errorCodesToAdd: null
+            );
+            
+            // Set command timeout (same as connection string for consistency)
+            npgsqlOptions.CommandTimeout(60);
+        }
     )
+    // Disable sensitive data logging in production for security
+    .EnableSensitiveDataLogging(builder.Environment.IsDevelopment())
+    // Log detailed errors in development
+    .EnableDetailedErrors(builder.Environment.IsDevelopment())
 );
 
 // Register navigation service
