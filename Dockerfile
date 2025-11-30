@@ -21,14 +21,14 @@ COPY --from=build /app/out .
 
 # Set environment to Production
 ENV ASPNETCORE_ENVIRONMENT=Production
-ENV ASPNETCORE_URLS=http://+:80
 
-# Expose port
-EXPOSE 80
+# Expose port (Render uses PORT env variable, default 10000)
+# Note: The actual port binding is configured in Program.cs using the PORT environment variable
+EXPOSE 10000
 
-# Health check
+# Health check - uses PORT environment variable at runtime
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-  CMD curl -f http://localhost:80/api/LoadBalancer/metrics || exit 1
+  CMD curl -f http://localhost:${PORT:-10000}/api/LoadBalancer/metrics || exit 1
 
 # Run the app
 ENTRYPOINT ["dotnet", "ai-indoor-nav-api.dll"]
