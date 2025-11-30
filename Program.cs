@@ -16,6 +16,12 @@ DotEnv.Load(options);
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Configure URLs to bind to 0.0.0.0 on the PORT environment variable (for Render deployment)
+var port = Environment.GetEnvironmentVariable("PORT") ?? "10000";
+var urls = $"http://0.0.0.0:{port}";
+Console.WriteLine($"Configuring application to listen on: {urls}");
+builder.WebHost.UseUrls(urls);
+
 builder.Configuration.AddEnvironmentVariables();
 
 // Debug: Check if connection string is loaded
