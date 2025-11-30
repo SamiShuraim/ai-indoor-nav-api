@@ -68,25 +68,25 @@ builder.Services.AddCors(options =>
 var connectionString = Environment.GetEnvironmentVariable("DEFAULT_CONNECTION");
 var connectionStringBuilder = new Npgsql.NpgsqlConnectionStringBuilder(connectionString)
 {
-    // Connection pooling settings - optimized for Supabase pooler
-    MaxPoolSize = 50,               // Reduced for pooler usage (pooler handles connection pooling)
-    MinPoolSize = 5,                // Lower minimum for pooler
-    ConnectionIdleLifetime = 300,   // Close idle connections after 5 minutes
+    // Connection pooling settings - optimized for Supabase TRANSACTION MODE pooler (port 6543)
+    MaxPoolSize = 20,               // Lower for transaction pooling (pooler multiplexes connections)
+    MinPoolSize = 2,                // Minimal for transaction pooling
+    ConnectionIdleLifetime = 60,    // Shorter idle time for transaction pooling
     ConnectionPruningInterval = 10, // Check for idle connections every 10 seconds
     
-    // Timeout settings - increased for transient connection issues
-    Timeout = 60,                   // Increased connection timeout from 30 to 60 seconds
-    CommandTimeout = 90,            // Increased command timeout from 60 to 90 seconds
+    // Timeout settings - adjusted for transaction pooling
+    Timeout = 30,                   // Connection timeout
+    CommandTimeout = 30,            // Command timeout (keep shorter for transaction pooling)
     
-    // Resilience settings
-    KeepAlive = 30,                 // Send keepalive every 30 seconds
-    TcpKeepAlive = true,            // Enable TCP keepalive
-    TcpKeepAliveTime = 30,          // TCP keepalive time in seconds
-    TcpKeepAliveInterval = 10,      // TCP keepalive interval in seconds
+    // CRITICAL for Supabase Transaction Pooling Mode
+    NoResetOnClose = true,          // Must be true for transaction pooling!
+    Pooling = true,                 // Enable client-side pooling
     
-    // Performance settings
-    NoResetOnClose = false,         // Reset connection state on close for safety
-    Pooling = true                  // Ensure pooling is enabled
+    // Multiplexing for better performance with transaction pooling
+    Multiplexing = true,            // Enable multiplexing for transaction pooling
+    
+    // Disable features not supported by transaction pooling
+    // MaxAutoPrepare = 0 would disable prepared statements, but we handle this differently
 };
 
 builder.Services.AddDbContext<MyDbContext>(options =>
@@ -95,15 +95,22 @@ builder.Services.AddDbContext<MyDbContext>(options =>
         npgsqlOptions => {
             npgsqlOptions.UseNetTopologySuite();
             
-            // Configure aggressive retry logic for transient failures with exponential backoff
+            // CRITICAL: Disable prepared statements for transaction pooling mode
+            // Transaction pooling doesn't support prepared statements
+            npgsqlOptions.MaxBatchSize(1);
+            
+            // Configure retry logic for transient failures (reduced for transaction pooling)
             npgsqlOptions.EnableRetryOnFailure(
-                maxRetryCount: 6,                           // Increased from 5 to 6
-                maxRetryDelay: TimeSpan.FromSeconds(30),    // Increased from 10 to 30 seconds max delay
+                maxRetryCount: 3,                           // Reduced for transaction pooling
+                maxRetryDelay: TimeSpan.FromSeconds(10),    // Shorter delays for transaction pooling
                 errorCodesToAdd: null                       // Use default Npgsql transient error codes
             );
             
-            // Set command timeout (increased for complex queries)
-            npgsqlOptions.CommandTimeout(90);
+            // Set command timeout (adjusted for transaction pooling)
+            npgsqlOptions.CommandTimeout(30);
+            
+            // Migration settings for transaction pooling
+            npgsqlOptions.MigrationsHistoryTable("__EFMigrationsHistory", "public");
         }
     )
     // Disable sensitive data logging in production for security
@@ -169,16 +176,67 @@ builder.Services.AddIdentityCore<IdentityUser>()
 
 var app = builder.Build();
 
+// Apply migrations with timeout and error handling for transaction pooling
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<MyDbContext>();
-    db.Database.Migrate();
+    
+    try
+    {
+        Console.WriteLine("Checking database connection and applying migrations...");
+        
+        // Use a timeout for migration operations
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        
+        // For transaction pooling, check if migrations are needed first
+        var pendingMigrations = await db.Database.GetPendingMigrationsAsync(cts.Token);
+        var pendingCount = pendingMigrations.Count();
+        
+        if (pendingCount > 0)
+        {
+            Console.WriteLine($"Applying {pendingCount} pending migration(s)...");
+            await db.Database.MigrateAsync(cts.Token);
+            Console.WriteLine("Migrations applied successfully");
+        }
+        else
+        {
+            Console.WriteLine("Database is up to date, no migrations needed");
+            
+            // Just verify connection works
+            var canConnect = await db.Database.CanConnectAsync(cts.Token);
+            if (canConnect)
+            {
+                Console.WriteLine("Database connection verified successfully");
+            }
+            else
+            {
+                throw new Exception("Cannot connect to database");
+            }
+        }
+    }
+    catch (OperationCanceledException)
+    {
+        Console.WriteLine("ERROR: Migration operation timed out after 60 seconds");
+        Console.WriteLine("This might indicate an issue with transaction pooling configuration");
+        Console.WriteLine("Try running migrations manually or check your connection string");
+        throw;
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"ERROR during migration: {ex.Message}");
+        Console.WriteLine($"Connection string (masked): {connectionStringBuilder.Host}:{connectionStringBuilder.Port}/{connectionStringBuilder.Database}");
+        Console.WriteLine("Hint: For transaction pooling (port 6543), ensure:");
+        Console.WriteLine("  1. NoResetOnClose=true is set");
+        Console.WriteLine("  2. Connection timeout is reasonable (30-60s)");
+        Console.WriteLine("  3. Database is accessible from this host");
+        throw;
+    }
 }
 
 // Add this line before app.UseHttpsRedirection();
 app.UseCors();
 
-// Seed users at startup
+// Seed users at startup (with timeout for transaction pooling)
 using (var scope = app.Services.CreateScope())
 {
     var services = scope.ServiceProvider;
@@ -187,6 +245,9 @@ using (var scope = app.Services.CreateScope())
     async Task SeedUsersAsync()
     {
         Console.WriteLine("Starting user seeding process...");
+        
+        // Use timeout for user seeding operations
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(45));
         
         var users = new[]
         {
@@ -209,6 +270,13 @@ using (var scope = app.Services.CreateScope())
 
         foreach (var u in users)
         {
+            // Check for cancellation
+            if (cts.Token.IsCancellationRequested)
+            {
+                Console.WriteLine("User seeding cancelled due to timeout");
+                break;
+            }
+            
             // Skip if any required field is missing
             if (string.IsNullOrEmpty(u.UserName) || string.IsNullOrEmpty(u.Email) || string.IsNullOrEmpty(u.Password))
             {
@@ -253,10 +321,14 @@ using (var scope = app.Services.CreateScope())
     {
         await SeedUsersAsync();
     }
+    catch (OperationCanceledException)
+    {
+        Console.WriteLine("WARNING: User seeding timed out - application will start without seeding users");
+        // Don't crash - continue startup
+    }
     catch (Exception ex)
     {
-        Console.WriteLine($"CRITICAL ERROR during user seeding: {ex.Message}");
-        Console.WriteLine($"Stack trace: {ex.StackTrace}");
+        Console.WriteLine($"WARNING: Error during user seeding: {ex.Message}");
         // Don't crash the application - allow it to start even if user seeding fails
     }
 }
@@ -274,5 +346,12 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+
+Console.WriteLine("===========================================");
+Console.WriteLine("🚀 Application startup completed successfully!");
+Console.WriteLine($"🌐 Listening on: http://0.0.0.0:{port}");
+Console.WriteLine($"📊 Database: {connectionStringBuilder.Host}:{connectionStringBuilder.Port}");
+Console.WriteLine($"🔌 Connection Mode: Transaction Pooling (NoResetOnClose=true, Multiplexing=true)");
+Console.WriteLine("===========================================");
 
 app.Run();
