@@ -85,8 +85,8 @@ var connectionStringBuilder = new Npgsql.NpgsqlConnectionStringBuilder(connectio
     // Multiplexing for better performance with transaction pooling
     Multiplexing = true,            // Enable multiplexing for transaction pooling
     
-    // Keepalive for better connection health
-    KeepAlive = 60,                 // Send keepalive every 60 seconds
+    // Note: KeepAlive is not supported with Multiplexing in Npgsql
+    // Supabase's transaction pooler handles connection health at its level
     
     // Disable features not supported by transaction pooling
     // MaxAutoPrepare = 0 would disable prepared statements, but we handle this differently
