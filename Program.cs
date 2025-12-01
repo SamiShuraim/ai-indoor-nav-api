@@ -8,7 +8,6 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
-using NetTopologySuite.IO.Converters;
 
 // Load .env file
 DotEnvOptions options = new DotEnvOptions(probeLevelsToSearch: 6);
@@ -41,12 +40,20 @@ else
 builder.Services.AddControllers(options =>
     {
     })
+    .AddJsonOptions(options =>
+    {
+        // Configure System.Text.Json to handle circular references
+        options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
+        options.JsonSerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull;
+    })
     .AddNewtonsoftJson(opts =>
     {
         opts.SerializerSettings.Converters.Add(new FeatureJsonConverter());
         opts.SerializerSettings.Converters.Add(new GeometryConverter());
         opts.SerializerSettings.NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore;
         opts.SerializerSettings.ContractResolver = new Newtonsoft.Json.Serialization.CamelCasePropertyNamesContractResolver();
+        // Configure Newtonsoft.Json to handle circular references too
+        opts.SerializerSettings.ReferenceLoopHandling = Newtonsoft.Json.ReferenceLoopHandling.Ignore;
     });
 
 
@@ -139,6 +146,8 @@ builder.Services.AddSingleton<VisitorService>();
 
 // Register load balancer service as singleton to maintain state across requests
 builder.Services.AddSingleton<LoadBalancerService>();
+// Register HTTP cache service for ETag generation and cache validation
+builder.Services.AddSingleton<HttpCacheService>();
 builder.Services.AddAuthentication(options =>
     {
         options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;

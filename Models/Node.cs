@@ -3,6 +3,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 using Newtonsoft.Json;
 using NetTopologySuite.Geometries;
 using static System.DateTime;
+using System.Text.Json.Serialization;
 
 namespace ai_indoor_nav_api.Models
 {
@@ -62,7 +63,8 @@ namespace ai_indoor_nav_api.Models
         public DateTime UpdatedAt { get; set; } = UtcNow;
 
         [ForeignKey("FloorId")]
-        [JsonIgnore]
+        [Newtonsoft.Json.JsonIgnore]
+        [System.Text.Json.Serialization.JsonIgnore]
         public Floor? Floor { get; set; }
     }
 }

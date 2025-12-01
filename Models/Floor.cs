@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using Newtonsoft.Json;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json.Serialization;
 
 namespace ai_indoor_nav_api.Models
 {
@@ -33,16 +34,20 @@ namespace ai_indoor_nav_api.Models
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
         [ForeignKey("BuildingId")]
-        [JsonIgnore]
+        [Newtonsoft.Json.JsonIgnore]
+        [System.Text.Json.Serialization.JsonIgnore]
         public Building? Building { get; set; }
 
-        [JsonIgnore]
+        [Newtonsoft.Json.JsonIgnore]
+        [System.Text.Json.Serialization.JsonIgnore]
         public ICollection<RouteNode> RouteNodes { get; set; } = new List<RouteNode>();
 
-        [JsonIgnore]
+        [Newtonsoft.Json.JsonIgnore]
+        [System.Text.Json.Serialization.JsonIgnore]
         public ICollection<Poi> Pois { get; set; } = new List<Poi>();
 
-        [JsonIgnore]
+        [Newtonsoft.Json.JsonIgnore]
+        [System.Text.Json.Serialization.JsonIgnore]
         public ICollection<Beacon> Beacons { get; set; } = new List<Beacon>();
     }
 }
