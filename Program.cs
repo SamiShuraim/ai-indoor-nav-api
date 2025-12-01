@@ -68,15 +68,15 @@ builder.Services.AddCors(options =>
 var connectionString = Environment.GetEnvironmentVariable("DEFAULT_CONNECTION");
 var connectionStringBuilder = new Npgsql.NpgsqlConnectionStringBuilder(connectionString)
 {
-    // Connection pooling settings - optimized for Supabase TRANSACTION MODE pooler (port 6543)
-    MaxPoolSize = 20,               // Lower for transaction pooling (pooler multiplexes connections)
-    MinPoolSize = 2,                // Minimal for transaction pooling
-    ConnectionIdleLifetime = 60,    // Shorter idle time for transaction pooling
-    ConnectionPruningInterval = 10, // Check for idle connections every 10 seconds
+    // Connection pooling settings - OPTIMIZED FOR 50+ CONCURRENT USERS
+    MaxPoolSize = 50,               // Increased to handle 50 concurrent users
+    MinPoolSize = 10,               // Keep 10 connections warm for faster response
+    ConnectionIdleLifetime = 300,   // 5 minutes idle lifetime
+    ConnectionPruningInterval = 30, // Check for idle connections every 30 seconds
     
-    // Timeout settings - adjusted for transaction pooling
-    Timeout = 30,                   // Connection timeout
-    CommandTimeout = 30,            // Command timeout (keep shorter for transaction pooling)
+    // Timeout settings - INCREASED for better reliability under load
+    Timeout = 60,                   // 60 second connection timeout
+    CommandTimeout = 60,            // 60 second command timeout (handles slow queries better)
     
     // CRITICAL for Supabase Transaction Pooling Mode
     NoResetOnClose = true,          // Must be true for transaction pooling!
@@ -84,6 +84,9 @@ var connectionStringBuilder = new Npgsql.NpgsqlConnectionStringBuilder(connectio
     
     // Multiplexing for better performance with transaction pooling
     Multiplexing = true,            // Enable multiplexing for transaction pooling
+    
+    // Keepalive for better connection health
+    KeepAlive = 60,                 // Send keepalive every 60 seconds
     
     // Disable features not supported by transaction pooling
     // MaxAutoPrepare = 0 would disable prepared statements, but we handle this differently
@@ -99,15 +102,15 @@ builder.Services.AddDbContext<MyDbContext>(options =>
             // Transaction pooling doesn't support prepared statements
             npgsqlOptions.MaxBatchSize(1);
             
-            // Configure retry logic for transient failures (reduced for transaction pooling)
+            // Configure retry logic for transient failures (INCREASED for high concurrency)
             npgsqlOptions.EnableRetryOnFailure(
-                maxRetryCount: 3,                           // Reduced for transaction pooling
-                maxRetryDelay: TimeSpan.FromSeconds(10),    // Shorter delays for transaction pooling
+                maxRetryCount: 5,                           // More retries for high concurrency
+                maxRetryDelay: TimeSpan.FromSeconds(15),    // Longer max delay between retries
                 errorCodesToAdd: null                       // Use default Npgsql transient error codes
             );
             
-            // Set command timeout (adjusted for transaction pooling)
-            npgsqlOptions.CommandTimeout(30);
+            // Set command timeout (INCREASED for high concurrency)
+            npgsqlOptions.CommandTimeout(60);
             
             // Migration settings for transaction pooling
             npgsqlOptions.MigrationsHistoryTable("__EFMigrationsHistory", "public");
@@ -347,11 +350,34 @@ app.UseAuthorization();
 
 app.MapControllers();
 
+// Pre-warm the cache for better performance on first requests
+Console.WriteLine("===========================================");
+Console.WriteLine("♨️  Pre-warming cache for optimal performance...");
+Console.WriteLine("===========================================");
+
+using (var scope = app.Services.CreateScope())
+{
+    try
+    {
+        var cacheService = scope.ServiceProvider.GetRequiredService<NodeCacheService>();
+        await cacheService.PrewarmCacheAsync();
+        Console.WriteLine("✅ Cache pre-warming completed successfully!");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"⚠️  WARNING: Cache pre-warming failed: {ex.Message}");
+        Console.WriteLine("Application will continue but may have slower initial requests.");
+    }
+}
+
 Console.WriteLine("===========================================");
 Console.WriteLine("🚀 Application startup completed successfully!");
 Console.WriteLine($"🌐 Listening on: http://0.0.0.0:{port}");
 Console.WriteLine($"📊 Database: {connectionStringBuilder.Host}:{connectionStringBuilder.Port}");
+Console.WriteLine($"🔌 Connection Pool: Min={connectionStringBuilder.MinPoolSize}, Max={connectionStringBuilder.MaxPoolSize}");
+Console.WriteLine($"⏱️  Timeouts: Connection={connectionStringBuilder.Timeout}s, Command={connectionStringBuilder.CommandTimeout}s");
 Console.WriteLine($"🔌 Connection Mode: Transaction Pooling (NoResetOnClose=true, Multiplexing=true)");
+Console.WriteLine($"💾 Cache: Enabled with 30min duration (1hr for connection points)");
 Console.WriteLine("===========================================");
 
 app.Run();

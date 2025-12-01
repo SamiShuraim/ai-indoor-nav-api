@@ -27,9 +27,28 @@ namespace ai_indoor_nav_api.Data
                 .Property(p => p.PoiType)
                 .HasConversion<string>();
             
+            // RouteNode indexes for performance
             builder.Entity<RouteNode>()
                 .HasIndex(r => r.Geometry)
                 .HasMethod("GIST");
+            
+            builder.Entity<RouteNode>()
+                .HasIndex(r => r.FloorId)
+                .HasDatabaseName("idx_route_nodes_floor_id");
+            
+            builder.Entity<RouteNode>()
+                .HasIndex(r => r.Level)
+                .HasDatabaseName("idx_route_nodes_level");
+            
+            // Note: idx_route_nodes_is_connection_point is created in AddConnectionPointFields migration
+            
+            builder.Entity<RouteNode>()
+                .HasIndex(r => new { r.FloorId, r.Level })
+                .HasDatabaseName("idx_route_nodes_floor_level");
+            
+            builder.Entity<RouteNode>()
+                .HasIndex(r => new { r.IsVisible, r.FloorId })
+                .HasDatabaseName("idx_route_nodes_visible_floor");
 
             // POI configuration
             builder.Entity<PoiCategory>()
