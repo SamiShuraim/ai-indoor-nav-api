@@ -21,10 +21,12 @@ namespace ai_indoor_nav_api.Services
         private const string FLOOR_NODES_PREFIX = "floor_nodes_";
         private const string CONNECTION_POINTS_KEY = "connection_points";
         private const string LEVEL_NODES_PREFIX = "level_nodes_";
+        private const string SINGLE_NODE_PREFIX = "single_node_";
         
-        // Cache durations
-        private static readonly TimeSpan DefaultCacheDuration = TimeSpan.FromMinutes(10);
-        private static readonly TimeSpan ConnectionPointsCacheDuration = TimeSpan.FromMinutes(30);
+        // Cache durations - EXTENDED for better concurrency performance
+        private static readonly TimeSpan DefaultCacheDuration = TimeSpan.FromMinutes(30);
+        private static readonly TimeSpan ConnectionPointsCacheDuration = TimeSpan.FromHours(1);
+        private static readonly TimeSpan SingleNodeCacheDuration = TimeSpan.FromMinutes(15);
         
         // Statistics
         private long _cacheHits = 0;
@@ -162,23 +164,57 @@ namespace ai_indoor_nav_api.Services
         }
 
         /// <summary>
-        /// Gets a specific node by ID, using cache if available (from all nodes cache)
+        /// Gets a specific node by ID with dedicated single-node cache (OPTIMIZED for high concurrency)
         /// </summary>
         public async Task<RouteNode?> GetNodeByIdAsync(int nodeId)
         {
-            var allNodes = await GetAllNodesAsync();
-            var node = allNodes.FirstOrDefault(n => n.Id == nodeId);
+            string cacheKey = $"{SINGLE_NODE_PREFIX}{nodeId}";
             
-            if (node != null)
+            // Try single-node cache first (fastest)
+            if (_cache.TryGetValue(cacheKey, out RouteNode? cachedNode) && cachedNode != null)
             {
-                _logger.LogDebug($"[NODE_CACHE] Found node {nodeId} in cache");
+                _cacheHits++;
+                _logger.LogDebug($"[NODE_CACHE] Single-node cache HIT for node {nodeId}");
+                return cachedNode;
+            }
+            
+            // Try to find in all nodes cache (second fastest)
+            if (_cache.TryGetValue(ALL_NODES_KEY, out List<RouteNode>? allNodes) && allNodes != null)
+            {
+                var node = allNodes.FirstOrDefault(n => n.Id == nodeId);
+                if (node != null)
+                {
+                    // Cache this single node for future requests
+                    _cache.Set(cacheKey, node, SingleNodeCacheDuration);
+                    _cacheHits++;
+                    _logger.LogDebug($"[NODE_CACHE] Found node {nodeId} in all-nodes cache, cached separately");
+                    return node;
+                }
+            }
+            
+            // Last resort: fetch from database
+            _cacheMisses++;
+            _logger.LogDebug($"[NODE_CACHE] Cache MISS for node {nodeId}, fetching from database");
+            
+            using var scope = _scopeFactory.CreateScope();
+            var context = scope.ServiceProvider.GetRequiredService<MyDbContext>();
+            
+            var dbNode = await context.RouteNodes
+                .AsNoTracking()
+                .FirstOrDefaultAsync(n => n.Id == nodeId);
+            
+            if (dbNode != null)
+            {
+                // Cache the node for future requests
+                _cache.Set(cacheKey, dbNode, SingleNodeCacheDuration);
+                _logger.LogDebug($"[NODE_CACHE] Fetched and cached node {nodeId} from database");
             }
             else
             {
-                _logger.LogDebug($"[NODE_CACHE] Node {nodeId} not found in cache");
+                _logger.LogDebug($"[NODE_CACHE] Node {nodeId} not found in database");
             }
             
-            return node;
+            return dbNode;
         }
 
         /// <summary>
@@ -199,6 +235,9 @@ namespace ai_indoor_nav_api.Services
             string cacheKey = $"{FLOOR_NODES_PREFIX}{floorId}";
             _cache.Remove(cacheKey);
             _cache.Remove(ALL_NODES_KEY); // Also invalidate all nodes since they changed
+            
+            // Clear single-node caches (they may be stale now)
+            // Note: We can't easily iterate MemoryCache entries, so we rely on expiration
             _logger.LogInformation($"[NODE_CACHE] Invalidated cache for floor {floorId}");
         }
 

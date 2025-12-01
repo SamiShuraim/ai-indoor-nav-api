@@ -60,7 +60,8 @@ namespace ai_indoor_nav_api.Controllers
         [HttpGet("{id}")]
         public async Task<ActionResult<Feature>> GetRouteNode(int id)
         {
-            var routeNode = await _context.RouteNodes.FindAsync(id);
+            // Use cache for faster lookups (especially under high concurrency)
+            var routeNode = await _cacheService.GetNodeByIdAsync(id);
 
             if (routeNode == null)
             {
@@ -444,12 +445,10 @@ namespace ai_indoor_nav_api.Controllers
                     return BadRequest("Current node ID and target level are required.");
                 }
 
-                Console.WriteLine("[NAV_TO_LEVEL] Step 1: Loading start node...");
+                Console.WriteLine("[NAV_TO_LEVEL] Step 1: Loading start node from CACHE...");
                 
-                // Get the start node directly (AsNoTracking for read-only query)
-                var startNode = await _context.RouteNodes
-                    .AsNoTracking()
-                    .FirstOrDefaultAsync(rn => rn.Id == request.CurrentNodeId);
+                // Get the start node from CACHE instead of database (MUCH FASTER!)
+                var startNode = await _cacheService.GetNodeByIdAsync(request.CurrentNodeId);
 
                 if (startNode == null)
                 {
