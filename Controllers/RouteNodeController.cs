@@ -52,7 +52,9 @@ namespace ai_indoor_nav_api.Controllers
                 query = query.Where(rn => rn.Floor!.BuildingId == building.Value);
             }
 
-            return Ok(query.ToGeoJsonFeatureCollection());
+            // Materialize the query before converting to GeoJSON (required for multiplexing)
+            var routeNodes = await query.ToListAsync();
+            return Ok(routeNodes.ToGeoJsonFeatureCollection());
         }
 
 
