@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ai_indoor_nav_api.Data;
+using ai_indoor_nav_api.Filters;
 using ai_indoor_nav_api.Models;
 
 namespace ai_indoor_nav_api.Controllers
@@ -12,6 +13,7 @@ namespace ai_indoor_nav_api.Controllers
     { 
         // GET: api/Floor?building=3
         [HttpGet]
+        [HttpCache(Duration = 600, VaryByQuery = true)] // Floors change less frequently
         public async Task<ActionResult<IEnumerable<Floor>>> GetFloors([FromQuery] int? building)
         {
             var query = context.Floors
@@ -33,6 +35,7 @@ namespace ai_indoor_nav_api.Controllers
 
         // GET: api/Floor/5
         [HttpGet("{id}")]
+        [HttpCache(Duration = 600)]
         public async Task<ActionResult<Floor>> GetFloor(int id)
         {
             var floor = await context.Floors

@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ai_indoor_nav_api.Data;
+using ai_indoor_nav_api.Filters;
 using ai_indoor_nav_api.Models;
 using NetTopologySuite.Features;
 
@@ -12,6 +13,7 @@ namespace ai_indoor_nav_api.Controllers
     {
         // GET: api/Beacon
         [HttpGet]
+        [HttpCache(Duration = 120, VaryByQuery = true)] // Beacons may update more frequently
         public async Task<ActionResult<FeatureCollection>> GetBeacons([FromQuery] int? floor, [FromQuery] int? building)
         {
             var query = context.Beacons
@@ -32,6 +34,7 @@ namespace ai_indoor_nav_api.Controllers
 
         // GET: api/Beacon/5
         [HttpGet("{id}")]
+        [HttpCache(Duration = 120)]
         public async Task<ActionResult<Feature>> GetBeacon(int id)
         {
             var beacon = await context.Beacons
@@ -48,6 +51,7 @@ namespace ai_indoor_nav_api.Controllers
 
         // GET: api/Beacon/floor/5
         [HttpGet("floor/{floorId}")]
+        [HttpCache(Duration = 120)]
         public async Task<ActionResult<FeatureCollection>> GetBeaconsByFloorId(int floorId)
         {
             var query = await context.Beacons
@@ -59,6 +63,7 @@ namespace ai_indoor_nav_api.Controllers
 
         // GET: api/Beacon/uuid/{uuid}
         [HttpGet("uuid/{uuid}")]
+        [HttpCache(Duration = 120)]
         public async Task<ActionResult<IEnumerable<Beacon>>> GetBeaconsByUuid(string uuid)
         {
             return await context.Beacons
@@ -69,6 +74,7 @@ namespace ai_indoor_nav_api.Controllers
 
         // GET: api/Beacon/active
         [HttpGet("active")]
+        [HttpCache(Duration = 60)] // Active status may change frequently
         public async Task<ActionResult<IEnumerable<Beacon>>> GetActiveBeacons()
         {
             return await context.Beacons
@@ -79,6 +85,7 @@ namespace ai_indoor_nav_api.Controllers
 
         // GET: api/Beacon/low-battery/{threshold}
         [HttpGet("low-battery/{threshold}")]
+        [HttpCache(Duration = 60)] // Battery levels change frequently
         public async Task<ActionResult<IEnumerable<Beacon>>> GetLowBatteryBeacons(int threshold = 20)
         {
             return await context.Beacons

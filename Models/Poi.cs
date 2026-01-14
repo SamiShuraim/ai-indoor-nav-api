@@ -4,6 +4,7 @@ using Newtonsoft.Json;
 using ai_indoor_nav_api.Enums;
 using NetTopologySuite.Geometries;
 using static System.DateTime;
+using System.Text.Json.Serialization;
 
 namespace ai_indoor_nav_api.Models
 {
@@ -26,7 +27,8 @@ namespace ai_indoor_nav_api.Models
         [Column("description")]
         public string? Description { get; set; }
 
-        [JsonIgnore]
+        [Newtonsoft.Json.JsonIgnore]
+        [System.Text.Json.Serialization.JsonIgnore]
         public ICollection<Poi> Pois { get; set; } = new List<Poi>();
     }
     
@@ -83,14 +85,16 @@ namespace ai_indoor_nav_api.Models
         public double? ClosestNodeDistance { get; set; }
 
         [ForeignKey("FloorId")]
-        [JsonIgnore]
+        [Newtonsoft.Json.JsonIgnore]
+        [System.Text.Json.Serialization.JsonIgnore]
         public Floor? Floor { get; init; }
 
         [ForeignKey("CategoryId")]
         public PoiCategory? Category { get; set; }
 
         [ForeignKey("ClosestNodeId")]
-        [JsonIgnore]
+        [Newtonsoft.Json.JsonIgnore]
+        [System.Text.Json.Serialization.JsonIgnore]
         public RouteNode? ClosestNode { get; set; }
     }
 }
